@@ -2,19 +2,16 @@ use std::f64::consts::{
     FRAC_1_SQRT_2 as ONE_BY_ROOT_2, FRAC_PI_2 as PI_BY_2, FRAC_PI_4 as PI_BY_4,
 };
 use std::fmt::Display;
-use std::iter;
 use std::num::Wrapping;
 
 use lazy_static::lazy_static;
 
 use num_traits::{One, Zero};
 
-use nalgebra::dmatrix;
 use nalgebra::Complex;
 use nalgebra::DMatrix;
-use nalgebra::{DVector, RowDVector};
-
-use bitvec::prelude::{BitVec, Lsb0};
+use nalgebra::DVector;
+use nalgebra::{dmatrix, Vector2};
 
 use crate::ast::*;
 
@@ -142,23 +139,6 @@ impl<'a> Emulator<'a> {
             return Err(EmulatorError::PCOutOfBounds)
         };
 
-        let single_qbit_gate_mat = |mat: DCf64Mat, qbit: usize| -> DCf64Mat {
-            iter::repeat(MAT_2_IDENTITY.clone())
-                .take(qbit)
-                .chain(iter::once(mat))
-                .chain(iter::repeat(MAT_2_IDENTITY.clone()))
-                .take(self.qbits as usize)
-                .reduce(|mat1, mat2| mat2.kronecker(&mat1))
-                .unwrap()
-        };
-
-        fn bitvec_to_statevec(bvec: &BitVec<u64>) -> Vec<Complexf64> {
-            let mut vec = vec![Complex::zero(); bvec.len()];
-            let num = bvec.iter().rev().fold(0, |acc, b| (acc << 1) | *b as usize);
-            vec[num] = Complex::one();
-            vec
-        }
-
         match inst {
             // Quantum Instructions
             Inst::Qsel(qreg) => {
@@ -167,44 +147,34 @@ impl<'a> Emulator<'a> {
                 }
                 self.qreg_sel = qreg
             }
-            Inst::Hadamard(qbit) => {
-                self.apply_mat(single_qbit_gate_mat(HADAMARD_MAT.clone(), qbit))
+            Inst::Hadamard(qbit) => self.apply_mat_1(&HADAMARD_MAT, qbit),
+            Inst::Cnot(qbit1, qbit2) => {
+                let qreg = &mut self.qregs[self.qreg_sel];
+
+                let qbit1_mask = 1 << qbit1;
+                let qbit2_mask = 1 << qbit2;
+
+                for state in 0..(1 << self.qbits) {
+                    if state & qbit1_mask == 0 || state & qbit2_mask != 0 {
+                        continue;
+                    }
+                    qreg.swap_rows(state, state | qbit2_mask);
+                }
             }
-            Inst::Cnot(qbit1, qbit2) => self.apply_mat(
-                (0..(1u64 << self.qbits))
-                    .map(|e| {
-                        let mut bvec = BitVec::<_, Lsb0>::from_element(e);
-                        bvec.resize(1usize << self.qbits, false);
-                        bvec
-                    })
-                    .map(|bvec| {
-                        let mut bvec2 = bvec.clone();
-                        if bvec[qbit1] {
-                            let tmp = bvec2[qbit2];
-                            bvec2.set(qbit2, !tmp)
-                        }
-                        (
-                            DVector::<Complexf64>::from_vec(bitvec_to_statevec(&bvec)),
-                            RowDVector::<Complexf64>::from_vec(bitvec_to_statevec(&bvec2)),
-                        )
-                    })
-                    .map(|(v1, v2)| v1 * v2)
-                    .sum::<DCf64Mat>(),
-            ),
-            Inst::X(qbit) => self.apply_mat(single_qbit_gate_mat(PAULI_X_MAT.clone(), qbit)),
-            Inst::Y(qbit) => self.apply_mat(single_qbit_gate_mat(PAULI_Y_MAT.clone(), qbit)),
-            Inst::Z(qbit) => self.apply_mat(single_qbit_gate_mat(PAULI_Z_MAT.clone(), qbit)),
-            Inst::Rx(qbit, rot) => self.apply_mat(single_qbit_gate_mat(rx(rot.get_angle()), qbit)),
-            Inst::Ry(qbit, rot) => self.apply_mat(single_qbit_gate_mat(ry(rot.get_angle()), qbit)),
-            Inst::Rz(qbit, rot) => self.apply_mat(single_qbit_gate_mat(rz(rot.get_angle()), qbit)),
-            Inst::U(qbit, theta, phi, lambda) => self.apply_mat(single_qbit_gate_mat(
-                u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
+            Inst::X(qbit) => self.apply_mat_1(&PAULI_X_MAT, qbit),
+            Inst::Y(qbit) => self.apply_mat_1(&PAULI_Y_MAT, qbit),
+            Inst::Z(qbit) => self.apply_mat_1(&PAULI_Z_MAT, qbit),
+            Inst::Rx(qbit, rot) => self.apply_mat_1(&rx(rot.get_angle()), qbit),
+            Inst::Ry(qbit, rot) => self.apply_mat_1(&ry(rot.get_angle()), qbit),
+            Inst::Rz(qbit, rot) => self.apply_mat_1(&rz(rot.get_angle()), qbit),
+            Inst::U(qbit, theta, phi, lambda) => self.apply_mat_1(
+                &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
                 qbit,
-            )),
-            Inst::S(qbit) => self.apply_mat(single_qbit_gate_mat(S_MAT.clone(), qbit)),
-            Inst::T(qbit) => self.apply_mat(single_qbit_gate_mat(T_MAT.clone(), qbit)),
-            Inst::Sdg(qbit) => self.apply_mat(single_qbit_gate_mat(S_DG_MAT.clone(), qbit)),
-            Inst::Tdg(qbit) => self.apply_mat(single_qbit_gate_mat(T_DG_MAT.clone(), qbit)),
+            ),
+            Inst::S(qbit) => self.apply_mat_1(&S_MAT, qbit),
+            Inst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
+            Inst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
+            Inst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
 
             // Classical Instructions
             Inst::Add(r1, r2, r3) => {
@@ -226,9 +196,27 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    fn apply_mat(&mut self, mat: DCf64Mat) {
-        let state_vector = &self.qregs[self.qreg_sel];
-        self.qregs[self.qreg_sel] = mat * state_vector;
+    fn apply_mat_1(&mut self, mat: &DCf64Mat, qbit: usize) {
+        let qreg = &mut self.qregs[self.qreg_sel];
+
+        let mut in_gate_state = Vector2::<Complexf64>::zeros();
+        let mut out_gate_state = Vector2::<Complexf64>::zeros();
+
+        let qbit_mask = 1 << qbit;
+
+        for state in 0..(1 << self.qbits) {
+            if state & qbit_mask != 0 {
+                continue;
+            }
+
+            in_gate_state[0] = qreg[state];
+            in_gate_state[1] = qreg[state | qbit_mask];
+
+            mat.mul_to(&in_gate_state, &mut out_gate_state);
+
+            qreg[state] = out_gate_state[0];
+            qreg[state | qbit_mask] = out_gate_state[1];
+        }
     }
 }
 

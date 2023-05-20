@@ -115,6 +115,22 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then(rot)
                     .map(|tup| FlattenTuple2::into_flatten(tup))
                     .map(|ops| Inst::U(ops.0, ops.1, ops.2, ops.3)),
+                just("s")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .map(|qbit| Inst::S(qbit)),
+                just("t")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .map(|qbit| Inst::T(qbit)),
+                just("sdg")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .map(|qbit| Inst::Sdg(qbit)),
+                just("tdg")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .map(|qbit| Inst::Tdg(qbit)),
                 // Classical Instructions
                 just("add")
                     .then(repeated(just(' ')))
