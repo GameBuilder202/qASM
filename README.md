@@ -29,33 +29,35 @@ The general format for quantum instructions are:
 ```
 <op> q<n> <other arguments>
 ```
-Where `<op` is the name/opcode, `q<n>` specifies a specific qubit `n` of the currently selected quantum register.
+Where `<op>` is the name/opcode, `q<n>` specifies a specific qubit `n` of the currently selected quantum register.
 `<other arguments>` can include more qubits as arguments, or in the case of some instructions, a rotation expressed
 as a rational multiple of pi, in the format `[<n>]pi[/<n>]`, where `<n>` can be any non-negative number, and items
 in `[]` are optional. Quantum registers can be selected via the `qsel` instruction, which has the general format
 `qsel qr<n>` where `<n>` is any non-negative number.
 
-List of currently implemented quantum instructions: (format is "Name - `<op>`")
-- Identity - id
-- Hadamard - h
-- CNOT - cnot
-- CCNOT/Toffoli - ccnot
-- Pauli X - x
-- Pauli Y - y
-- Pauli Z - z
-- Rx - rx
-- Ry - ry
-- Rz - rz
-- U gate - u
-- S gate - s
-- T gate - t
-- S-dagger - sdg
-- T-dagger - tdg
-- Phase - p
-- Controlled Hadamard - ch
-- Controlled Pauli Y - cy
-- Controlled Pauli Z - cz
-- Swap - swap
+List of currently implemented quantum instructions:
+
+| Quantum Gate        | Instruction name |
+| ------------------- | ---------------- |
+| Hadamard            | h                |
+| CNOT                | cnot             |
+| CCNOT/Toffoli       | ccnot            |
+| Pauli X             | x                |
+| Pauli Y             | y                |
+| Pauli Z             | z                |
+| Rx                  | rx               |
+| Ry                  | ry               |
+| Rz                  | rz               |
+| U gate              | u                |
+| S gate              | s                |
+| T gate              | t                |
+| S-dagger            | sdg              |
+| T-dagger            | tdg              |
+| Phase gate          | p                |
+| Controlled Hadamard | ch               |
+| Controlled Pauli Y  | cy               |
+| Controlled Pauli Z  | cz               |
+| Swap                | swap             |
 
 General format for classical instructions are:
 ```
@@ -65,12 +67,14 @@ Where `<op>` is the name/opcode, operands may include `cr<n>`, which specifies a
 an immediate literal value (for now non-negative due to not implemented in parser yet) Other than these differences,
 they behave basically the same as any other assembly language instructions.
 
-List of currently implemented classical instructions: (format is "`<op>` - Description")
-- add - Takes 3 arguments, first being a register and the other 2 being either a register or immediate. Puts the sum of the
-immediates/values in the registers into the first register.
+List of currently implemented classical instructions:
+
+| Instruction name | Description |
+| ---------------- | ----------- |
+| add              | Takes 3 arguments, first being a register and the other 2 being either a register or immediate. Puts the sum of the immediates/values in the registers into the first register |
 
 # Examples
-This program simulates the |Phi+> bell state:
+This program simulates the $\ket{\Phi^+}$ bell state:
 ```
 qbits 2
 cbits 8
