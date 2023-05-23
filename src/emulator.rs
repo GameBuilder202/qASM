@@ -9,9 +9,8 @@ use lazy_static::lazy_static;
 use num_traits::{One, Zero};
 
 use nalgebra::Complex;
-use nalgebra::DMatrix;
-use nalgebra::DVector;
-use nalgebra::{dmatrix, Vector2};
+use nalgebra::{dmatrix, DMatrix};
+use nalgebra::{DVector, Vector2};
 
 use crate::ast::*;
 
@@ -147,7 +146,8 @@ impl<'a> Emulator<'a> {
                 }
                 self.qreg_sel = qreg
             }
-            Inst::Hadamard(qbit) => self.apply_mat_1(&HADAMARD_MAT, qbit),
+            Inst::Id(qbit) => self.apply_mat(&MAT_2_IDENTITY, qbit),
+            Inst::Hadamard(qbit) => self.apply_mat(&HADAMARD_MAT, qbit),
             Inst::Cnot(qbit1, qbit2) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
@@ -158,23 +158,55 @@ impl<'a> Emulator<'a> {
                     if state & qbit1_mask == 0 || state & qbit2_mask != 0 {
                         continue;
                     }
-                    qreg.swap_rows(state, state | qbit2_mask);
+                    qreg.swap_rows(state, state | qbit2_mask)
                 }
             }
-            Inst::X(qbit) => self.apply_mat_1(&PAULI_X_MAT, qbit),
-            Inst::Y(qbit) => self.apply_mat_1(&PAULI_Y_MAT, qbit),
-            Inst::Z(qbit) => self.apply_mat_1(&PAULI_Z_MAT, qbit),
-            Inst::Rx(qbit, rot) => self.apply_mat_1(&rx(rot.get_angle()), qbit),
-            Inst::Ry(qbit, rot) => self.apply_mat_1(&ry(rot.get_angle()), qbit),
-            Inst::Rz(qbit, rot) => self.apply_mat_1(&rz(rot.get_angle()), qbit),
-            Inst::U(qbit, theta, phi, lambda) => self.apply_mat_1(
+            Inst::Ccnot(qbit1, qbit2, qbit3) => {
+                let qreg = &mut self.qregs[self.qreg_sel];
+
+                let qbit1_mask = 1 << qbit1;
+                let qbit2_mask = 1 << qbit2;
+                let qbit3_mask = 1 << qbit3;
+
+                for state in 0..(1 << self.qbits) {
+                    if state & qbit1_mask == 0 || state & qbit2_mask == 0 || state & qbit3_mask != 0
+                    {
+                        continue;
+                    }
+                    qreg.swap_rows(state, state | qbit3_mask)
+                }
+            }
+            Inst::X(qbit) => self.apply_mat(&PAULI_X_MAT, qbit),
+            Inst::Y(qbit) => self.apply_mat(&PAULI_Y_MAT, qbit),
+            Inst::Z(qbit) => self.apply_mat(&PAULI_Z_MAT, qbit),
+            Inst::Rx(qbit, rot) => self.apply_mat(&rx(rot.get_angle()), qbit),
+            Inst::Ry(qbit, rot) => self.apply_mat(&ry(rot.get_angle()), qbit),
+            Inst::Rz(qbit, rot) => self.apply_mat(&rz(rot.get_angle()), qbit),
+            Inst::U(qbit, theta, phi, lambda) => self.apply_mat(
                 &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
                 qbit,
             ),
-            Inst::S(qbit) => self.apply_mat_1(&S_MAT, qbit),
-            Inst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
-            Inst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
-            Inst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
+            Inst::S(qbit) => self.apply_mat(&S_MAT, qbit),
+            Inst::T(qbit) => self.apply_mat(&T_MAT, qbit),
+            Inst::Sdg(qbit) => self.apply_mat(&S_DG_MAT, qbit),
+            Inst::Tdg(qbit) => self.apply_mat(&T_DG_MAT, qbit),
+            Inst::P(qbit, rot) => self.apply_mat(&r1(rot.get_angle()), qbit),
+            Inst::Ch(qbit1, qbit2) => self.apply_controlled_mat(&HADAMARD_MAT, vec![qbit1], qbit2),
+            Inst::Cy(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Y_MAT, vec![qbit1], qbit2),
+            Inst::Cz(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Z_MAT, vec![qbit1], qbit2),
+            Inst::Swap(qbit1, qbit2) => {
+                let qreg = &mut self.qregs[self.qreg_sel];
+
+                let qbit1_mask = 1 << qbit1;
+                let qbit2_mask = 1 << qbit2;
+
+                for state in 0..(1 << self.qbits) {
+                    if state & qbit1_mask != 0 || state & qbit2_mask != 0 {
+                        continue;
+                    }
+                    qreg.swap_rows(state | qbit1_mask, state | qbit2_mask)
+                }
+            }
 
             // Classical Instructions
             Inst::Add(r1, r2, r3) => {
@@ -196,7 +228,7 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    fn apply_mat_1(&mut self, mat: &DCf64Mat, qbit: usize) {
+    fn apply_mat(&mut self, mat: &DCf64Mat, qbit: usize) {
         let qreg = &mut self.qregs[self.qreg_sel];
 
         let mut in_gate_state = Vector2::<Complexf64>::zeros();
@@ -216,6 +248,38 @@ impl<'a> Emulator<'a> {
 
             qreg[state] = out_gate_state[0];
             qreg[state | qbit_mask] = out_gate_state[1];
+        }
+    }
+
+    fn apply_controlled_mat(&mut self, mat: &DCf64Mat, controls: Vec<usize>, target: usize) {
+        let qreg = &mut self.qregs[self.qreg_sel];
+
+        let controls_mask = controls
+            .iter()
+            .map(|control| 1 << control)
+            .collect::<Vec<_>>();
+        let target_mask = 1 << target;
+
+        let mut in_gate_state = Vector2::zeros();
+        let mut out_gate_state = Vector2::zeros();
+
+        for state in 0..(1 << self.qbits) {
+            if controls_mask
+                .iter()
+                .map(|mask| state & mask == 0)
+                .any(|b| b)
+                || state & target_mask != 0
+            {
+                continue;
+            }
+
+            in_gate_state[0] = qreg[state];
+            in_gate_state[1] = qreg[state | target_mask];
+
+            mat.mul_to(&in_gate_state, &mut out_gate_state);
+
+            qreg[state] = out_gate_state[0];
+            qreg[state | target_mask] = out_gate_state[1];
         }
     }
 }

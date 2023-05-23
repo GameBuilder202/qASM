@@ -64,6 +64,10 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then(repeated(just(' ')))
                     .ignore_then(qreg)
                     .map(|qreg| Inst::Qsel(qreg)),
+                just("id")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .map(|qbit| Inst::Id(qbit)),
                 just("h")
                     .then(repeated(just(' ')))
                     .ignore_then(qbit)
@@ -74,6 +78,15 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then_ignore(repeated(just(' ')))
                     .then(qbit)
                     .map(|qbits| Inst::Cnot(qbits.0, qbits.1)),
+                just("ccnot")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .map(|tup| FlattenTuple1::into_flatten(tup))
+                    .map(|(qbit1, qbit2, qbit3)| Inst::Ccnot(qbit1, qbit2, qbit3)),
                 just('x')
                     .then(repeated(just(' ')))
                     .ignore_then(qbit)
@@ -114,7 +127,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then_ignore(repeated(just(' ')))
                     .then(rot)
                     .map(|tup| FlattenTuple2::into_flatten(tup))
-                    .map(|ops| Inst::U(ops.0, ops.1, ops.2, ops.3)),
+                    .map(|(qbit, rot1, rot2, rot3)| Inst::U(qbit, rot1, rot2, rot3)),
                 just("s")
                     .then(repeated(just(' ')))
                     .ignore_then(qbit)
@@ -131,6 +144,36 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then(repeated(just(' ')))
                     .ignore_then(qbit)
                     .map(|qbit| Inst::Tdg(qbit)),
+                just("p")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(rot)
+                    .map(|(qbit, rot)| Inst::P(qbit, rot)),
+                just("ch")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .map(|(qbit1, qbit2)| Inst::Ch(qbit1, qbit2)),
+                just("cy")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .map(|(qbit1, qbit2)| Inst::Cy(qbit1, qbit2)),
+                just("cz")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .map(|(qbit1, qbit2)| Inst::Cz(qbit1, qbit2)),
+                just("swap")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .map(|(qbit1, qbit2)| Inst::Swap(qbit1, qbit2)),
                 // Classical Instructions
                 just("add")
                     .then(repeated(just(' ')))
@@ -140,11 +183,11 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then_ignore(repeated(just(' ')))
                     .then(creg.or(imm))
                     .map(|ops| ops.into_flatten())
-                    .map(|ops| {
+                    .map(|(dst, src1, src2)| {
                         Inst::Add(
-                            extract_pat!(ops.0 => Operand::Reg(v) else unreachable!()),
-                            ops.1,
-                            ops.2,
+                            extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                            src1,
+                            src2,
                         )
                     }),
                 just("hlt").map(|_| Inst::Hlt),

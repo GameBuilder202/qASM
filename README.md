@@ -36,8 +36,10 @@ in `[]` are optional. Quantum registers can be selected via the `qsel` instructi
 `qsel qr<n>` where `<n>` is any non-negative number.
 
 List of currently implemented quantum instructions: (format is "Name - `<op>`")
+- Identity - id
 - Hadamard - h
-- Cnot - cnot
+- CNOT - cnot
+- CCNOT/Toffoli - ccnot
 - Pauli X - x
 - Pauli Y - y
 - Pauli Z - z
@@ -49,6 +51,11 @@ List of currently implemented quantum instructions: (format is "Name - `<op>`")
 - T gate - t
 - S-dagger - sdg
 - T-dagger - tdg
+- Phase - p
+- Controlled Hadamard - ch
+- Controlled Pauli Y - cy
+- Controlled Pauli Z - cz
+- Swap - swap
 
 General format for classical instructions are:
 ```

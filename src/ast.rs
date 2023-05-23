@@ -9,8 +9,10 @@ pub struct Program {
 pub enum Inst {
     // Quantum Instructions
     Qsel(usize),
+    Id(usize),
     Hadamard(usize),
     Cnot(usize, usize),
+    Ccnot(usize, usize, usize),
     X(usize),
     Y(usize),
     Z(usize),
@@ -22,6 +24,11 @@ pub enum Inst {
     T(usize),
     Sdg(usize),
     Tdg(usize),
+    P(usize, Rotation),
+    Ch(usize, usize),
+    Cy(usize, usize),
+    Cz(usize, usize),
+    Swap(usize, usize),
 
     // Classical Instructions
     Add(usize, Operand, Operand),
