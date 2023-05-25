@@ -37,27 +37,29 @@ in `[]` are optional. Quantum registers can be selected via the `qsel` instructi
 
 List of currently implemented quantum instructions:
 
-| Quantum Gate        | Instruction name |
-| ------------------- | ---------------- |
-| Hadamard            | h                |
-| CNOT                | cnot             |
-| CCNOT/Toffoli       | ccnot            |
-| Pauli X             | x                |
-| Pauli Y             | y                |
-| Pauli Z             | z                |
-| Rx                  | rx               |
-| Ry                  | ry               |
-| Rz                  | rz               |
-| U gate              | u                |
-| S gate              | s                |
-| T gate              | t                |
-| S-dagger            | sdg              |
-| T-dagger            | tdg              |
-| Phase gate          | p                |
-| Controlled Hadamard | ch               |
-| Controlled Pauli Y  | cy               |
-| Controlled Pauli Z  | cz               |
-| Swap                | swap             |
+| Quantum Gate        | Instruction name | Syntax example      | Explanation |
+| ------------------- | ---------------- | ------------------- | ----------- |
+| Hadamard            | h                | `h q0`              | Applies a Hadamard to qubit 0 |
+| CNOT                | cnot             | `cnot q0 q1`        | Applies a CNOT to qubit 1 with qubit 0 being the control |
+| CCNOT/Toffoli       | ccnot            | `ccnot q0 q1 q2`    | Applies a Toffoli to qubit 2 with qubit 0 and qubit 1 being the controls |
+| Pauli X             | x                | `x q0`              | Applies a Pauli X to qubit 0 |
+| Pauli Y             | y                | `y q0`              | Applies a Pauli Y to qubit 0 |
+| Pauli Z             | z                | `z q0`              | Applies a Pauli Z to qubit 0 |
+| Rx                  | rx               | `rx q0 pi/3`        | Rotates the statevector of qubit 0 by pi/3 radians along X axis on bloch sphere |
+| Ry                  | ry               | `ry q0 pi`          | Rotates the statevector of qubit 0 by pi radians along Y axis on bloch sphere |
+| Rz                  | rz               | `rz q0 pi/4`        | Rotates the statevector of qubit 0 by pi/4 radians along Z axis on bloch sphere |
+| U gate              | u                | `u q0 pi pi/3 pi/6` | Rotates the statevector of qubit 0 by the 3 Euler angles pi, pi/3, pi/6 |
+| S gate              | s                | `s q0`              | Applies an S gate to qubit 0 |
+| T gate              | t                | `t q0`              | Applies a T gate to qubit 0 |
+| S-dagger            | sdg              | `sdg q0`            | Applies a S-dagger or the inverse of S gate to qubit 0 |
+| T-dagger            | tdg              | `tdg q0`            | Applies a T-dagger or the inverse of T gate to qubit 0 |
+| Phase gate          | p                | `p q0 pi/3`         | Applies a rotation to the $\ket{1}$ state by pi/3 radians |
+| Controlled Hadamard | ch               | `ch q0 q1`          | Applies a controlled Hadamard to qubit 1 with qubit 0 being the control |
+| Controlled Pauli Y  | cy               | `cy q0 q1`          | Applies a controlled Pauli Y to qubit 1 with qubit 0 being the control |
+| Controlled Pauli Z  | cz               | `cz q0 q1`          | Applies a controlled Pauli Z to qubit 1 with qubit 0 being the control |
+| Swap                | swap             | `swap q0 q1`        | Swaps the states of qubits 0 and 1 |
+| Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(Pauli X) to qubit 0 |
+| Square Root Swap    | sqrtswp          | `sqrtswp q0 q1`     | Applies a sqrt(Swap) to qubits 0 and 1, halfway swapping their state |
 
 General format for classical instructions are:
 ```

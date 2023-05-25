@@ -174,6 +174,16 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then_ignore(repeated(just(' ')))
                     .then(qbit)
                     .map(|(qbit1, qbit2)| Inst::Swap(qbit1, qbit2)),
+                just("sqrtx")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .map(|qbit| Inst::SqrtX(qbit)),
+                just("sqrtswp")
+                    .then(repeated(just(' ')))
+                    .ignore_then(qbit)
+                    .then_ignore(repeated(just(' ')))
+                    .then(qbit)
+                    .map(|(qbit1, qbit2)| Inst::SqrtSwap(qbit1, qbit2)),
                 // Classical Instructions
                 just("add")
                     .then(repeated(just(' ')))

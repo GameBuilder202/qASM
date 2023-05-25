@@ -29,6 +29,8 @@ pub enum Inst {
     Cy(usize, usize),
     Cz(usize, usize),
     Swap(usize, usize),
+    SqrtX(usize),
+    SqrtSwap(usize, usize),
 
     // Classical Instructions
     Add(usize, Operand, Operand),

@@ -10,7 +10,7 @@ use num_traits::{One, Zero};
 
 use nalgebra::Complex;
 use nalgebra::{dmatrix, DMatrix};
-use nalgebra::{DVector, Vector2};
+use nalgebra::{DVector, Vector2, Vector4};
 
 use crate::ast::*;
 
@@ -42,6 +42,16 @@ lazy_static! {
     static ref T_MAT: DCf64Mat = r1(PI_BY_4);
     static ref S_DG_MAT: DCf64Mat = S_MAT.adjoint();
     static ref T_DG_MAT: DCf64Mat = T_MAT.adjoint();
+    static ref SQRT_X_MAT: DCf64Mat = dmatrix![
+        Complex::new(0.5, 0.5), Complex::new(0.5, -0.5);
+        Complex::new(0.5, -0.5), Complex::new(0.5, 0.5);
+    ];
+    static ref SQRT_SWAP_MAT: DCf64Mat = dmatrix![
+        Complex::one(), Complex::zero(), Complex::zero(), Complex::zero();
+        Complex::zero(), Complex::new(0.5, 0.5), Complex::new(0.5, -0.5), Complex::zero();
+        Complex::zero(), Complex::new(0.5, -0.5), Complex::new(0.5, 0.5), Complex::zero();
+        Complex::zero(), Complex::zero(), Complex::zero(), Complex::one();
+    ];
 }
 
 #[inline]
@@ -146,8 +156,8 @@ impl<'a> Emulator<'a> {
                 }
                 self.qreg_sel = qreg
             }
-            Inst::Id(qbit) => self.apply_mat(&MAT_2_IDENTITY, qbit),
-            Inst::Hadamard(qbit) => self.apply_mat(&HADAMARD_MAT, qbit),
+            Inst::Id(qbit) => self.apply_mat_1(&MAT_2_IDENTITY, qbit),
+            Inst::Hadamard(qbit) => self.apply_mat_1(&HADAMARD_MAT, qbit),
             Inst::Cnot(qbit1, qbit2) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
@@ -176,21 +186,21 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit3_mask)
                 }
             }
-            Inst::X(qbit) => self.apply_mat(&PAULI_X_MAT, qbit),
-            Inst::Y(qbit) => self.apply_mat(&PAULI_Y_MAT, qbit),
-            Inst::Z(qbit) => self.apply_mat(&PAULI_Z_MAT, qbit),
-            Inst::Rx(qbit, rot) => self.apply_mat(&rx(rot.get_angle()), qbit),
-            Inst::Ry(qbit, rot) => self.apply_mat(&ry(rot.get_angle()), qbit),
-            Inst::Rz(qbit, rot) => self.apply_mat(&rz(rot.get_angle()), qbit),
-            Inst::U(qbit, theta, phi, lambda) => self.apply_mat(
+            Inst::X(qbit) => self.apply_mat_1(&PAULI_X_MAT, qbit),
+            Inst::Y(qbit) => self.apply_mat_1(&PAULI_Y_MAT, qbit),
+            Inst::Z(qbit) => self.apply_mat_1(&PAULI_Z_MAT, qbit),
+            Inst::Rx(qbit, rot) => self.apply_mat_1(&rx(rot.get_angle()), qbit),
+            Inst::Ry(qbit, rot) => self.apply_mat_1(&ry(rot.get_angle()), qbit),
+            Inst::Rz(qbit, rot) => self.apply_mat_1(&rz(rot.get_angle()), qbit),
+            Inst::U(qbit, theta, phi, lambda) => self.apply_mat_1(
                 &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
                 qbit,
             ),
-            Inst::S(qbit) => self.apply_mat(&S_MAT, qbit),
-            Inst::T(qbit) => self.apply_mat(&T_MAT, qbit),
-            Inst::Sdg(qbit) => self.apply_mat(&S_DG_MAT, qbit),
-            Inst::Tdg(qbit) => self.apply_mat(&T_DG_MAT, qbit),
-            Inst::P(qbit, rot) => self.apply_mat(&r1(rot.get_angle()), qbit),
+            Inst::S(qbit) => self.apply_mat_1(&S_MAT, qbit),
+            Inst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
+            Inst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
+            Inst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
+            Inst::P(qbit, rot) => self.apply_mat_1(&r1(rot.get_angle()), qbit),
             Inst::Ch(qbit1, qbit2) => self.apply_controlled_mat(&HADAMARD_MAT, vec![qbit1], qbit2),
             Inst::Cy(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Y_MAT, vec![qbit1], qbit2),
             Inst::Cz(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Z_MAT, vec![qbit1], qbit2),
@@ -207,6 +217,8 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state | qbit1_mask, state | qbit2_mask)
                 }
             }
+            Inst::SqrtX(qbit) => self.apply_mat_1(&SQRT_X_MAT, qbit),
+            Inst::SqrtSwap(qbit1, qbit2) => self.apply_mat_2(&SQRT_SWAP_MAT, qbit1, qbit2),
 
             // Classical Instructions
             Inst::Add(r1, r2, r3) => {
@@ -228,11 +240,11 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    fn apply_mat(&mut self, mat: &DCf64Mat, qbit: usize) {
+    fn apply_mat_1(&mut self, mat: &DCf64Mat, qbit: usize) {
         let qreg = &mut self.qregs[self.qreg_sel];
 
-        let mut in_gate_state = Vector2::<Complexf64>::zeros();
-        let mut out_gate_state = Vector2::<Complexf64>::zeros();
+        let mut in_gate_state = Vector2::zeros();
+        let mut out_gate_state = Vector2::zeros();
 
         let qbit_mask = 1 << qbit;
 
@@ -248,6 +260,34 @@ impl<'a> Emulator<'a> {
 
             qreg[state] = out_gate_state[0];
             qreg[state | qbit_mask] = out_gate_state[1];
+        }
+    }
+
+    fn apply_mat_2(&mut self, mat: &DCf64Mat, qbit1: usize, qbit2: usize) {
+        let qreg = &mut self.qregs[self.qreg_sel];
+
+        let mut in_gate_state = Vector4::zeros();
+        let mut out_gate_state = Vector4::zeros();
+
+        let qbit1_mask = 1 << qbit1;
+        let qbit2_mask = 1 << qbit2;
+
+        for state in 0..(1 << self.qbits) {
+            if state & qbit1_mask != 0 || state & qbit2_mask != 0 {
+                continue;
+            }
+
+            in_gate_state[0] = qreg[state];
+            in_gate_state[1] = qreg[state | qbit1_mask];
+            in_gate_state[2] = qreg[state | qbit2_mask];
+            in_gate_state[3] = qreg[state | qbit1_mask | qbit2_mask];
+
+            mat.mul_to(&in_gate_state, &mut out_gate_state);
+
+            qreg[state] = out_gate_state[0];
+            qreg[state | qbit1_mask] = out_gate_state[1];
+            qreg[state | qbit2_mask] = out_gate_state[2];
+            qreg[state | qbit1_mask | qbit2_mask] = out_gate_state[3];
         }
     }
 
