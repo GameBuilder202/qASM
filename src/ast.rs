@@ -24,13 +24,15 @@ pub enum Inst {
     T(usize),
     Sdg(usize),
     Tdg(usize),
-    P(usize, Rotation),
+    Phase(usize, Rotation),
     Ch(usize, usize),
     Cy(usize, usize),
     Cz(usize, usize),
+    CPhase(usize, usize, Rotation),
     Swap(usize, usize),
     SqrtX(usize),
     SqrtSwap(usize, usize),
+    Measure(usize, usize, usize),
 
     // Classical Instructions
     Add(usize, Operand, Operand),

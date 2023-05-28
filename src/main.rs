@@ -1,7 +1,7 @@
 use std::{fs, io::Read};
 
 use chumsky::Parser as _;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 
 pub mod ast;
 pub mod emulator;
@@ -16,17 +16,58 @@ fn main() {
     f.read_to_string(&mut contents).unwrap();
 
     let ast = parser::parser().parse(contents);
-    println!("{:#?}", ast);
-    println!("----------------------");
 
     if let Ok(prog) = ast {
         let mut emulator = Emulator::new(&prog);
-        emulator.run().unwrap();
-        println!("{}", emulator)
+        let mut results = vec![vec![0u64; 1 << prog.headers.1]; prog.headers.3];
+
+        if args.print_emu_state {
+            emulator.run().unwrap();
+            println!("{}", emulator);
+            return;
+        }
+
+        for _ in 0..args.shots {
+            emulator.run().unwrap();
+
+            let cregs = emulator.get_cregs_state();
+            for (creg, res) in cregs.iter().zip(results.iter_mut()) {
+                let val1 = creg.get_val().0;
+                let val2 = res[val1 as usize];
+                res[val1 as usize] = val2 + 1
+            }
+
+            emulator.reset()
+        }
+
+        println!("creg statistics:");
+        for (i, result) in (0..results.len()).zip(results.iter()) {
+            println!("creg {} stat:", i);
+            let sum = result.iter().sum::<u64>() as f64;
+            for (j, res) in (0..result.len()).zip(result.iter()) {
+                println!(
+                    "[STATE {:01$b}] freq: {2};\tprob: {3:.5}",
+                    j,
+                    prog.headers.1 as usize,
+                    res,
+                    (*res as f64) / sum
+                )
+            }
+            println!("-------------------")
+        }
     }
 }
 
 #[derive(Parser)]
 struct Args {
+    /// The input .qASM file
     input_file: String,
+
+    /// Number of times to run the program for statistics information
+    #[clap(long = "shots", default_value_t = 1024)]
+    shots: u64,
+
+    /// Print the statevectors of the quantum registers and terminate the program (note: measurement operations are not ignored, use before adding measurements)
+    #[clap(long = "print-state", default_value_t = false, action = ArgAction::SetTrue)]
+    print_emu_state: bool,
 }

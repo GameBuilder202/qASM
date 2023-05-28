@@ -12,3 +12,4 @@ clap = { version = "4.2.7", features = [ "derive" ] }
 lazy_static = "1.4.0"
 nalgebra = "0.32.2"
 num-traits = "0.2.15"
+rand = "0.8.5"

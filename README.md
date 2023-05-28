@@ -57,9 +57,11 @@ List of currently implemented quantum instructions:
 | Controlled Hadamard | ch               | `ch q0 q1`          | Applies a controlled Hadamard to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Y  | cy               | `cy q0 q1`          | Applies a controlled Pauli Y to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Z  | cz               | `cz q0 q1`          | Applies a controlled Pauli Z to qubit 1 with qubit 0 being the control |
+| Controlled Phase    | cp               | `cp q0 q1 pi/2`     | Applies a controlled Phase gate to qubit 1 of pi/2 radians with qubit 0 being the control |
 | Swap                | swap             | `swap q0 q1`        | Swaps the states of qubits 0 and 1 |
 | Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(Pauli X) to qubit 0 |
 | Square Root Swap    | sqrtswp          | `sqrtswp q0 q1`     | Applies a sqrt(Swap) to qubits 0 and 1, halfway swapping their state |
+| Measure             | m                | `m q0 cr1 c3`       | Measures the state of qubit 0 into 3rd bit of classical register 1 |
 
 General format for classical instructions are:
 ```
@@ -79,13 +81,16 @@ List of currently implemented classical instructions:
 This program simulates the $\ket{\Phi^+}$ bell state:
 ```
 qbits 2
-cbits 8
+cbits 2
 qregs 1
 cregs 1
 
 qsel qr0
 h q0
 cnot q0 q1
+
+m q0 cr0 c0
+m q1 cr0 c1
 
 hlt
 ```

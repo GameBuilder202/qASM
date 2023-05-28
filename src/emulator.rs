@@ -8,9 +8,12 @@ use lazy_static::lazy_static;
 
 use num_traits::{One, Zero};
 
-use nalgebra::Complex;
 use nalgebra::{dmatrix, DMatrix};
+use nalgebra::{Complex, ComplexField};
 use nalgebra::{DVector, Vector2, Vector4};
+
+use rand::Rng;
+use rand::{rngs::ThreadRng, thread_rng};
 
 use crate::ast::*;
 
@@ -96,6 +99,8 @@ pub struct Emulator<'a> {
 
     pc: usize,
     qreg_sel: usize,
+
+    rng: ThreadRng,
 }
 
 impl<'a> Emulator<'a> {
@@ -128,6 +133,37 @@ impl<'a> Emulator<'a> {
 
             pc: 0,
             qreg_sel: 0,
+
+            rng: thread_rng(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self {
+            prog: self.prog,
+            qbits: self.qbits,
+            cbits: self.cbits,
+
+            qregs: vec![
+                {
+                    let mut dvec = DVector::zeros(1 << self.qbits);
+                    dvec[0] = Complex::one();
+                    dvec
+                };
+                self.qregs.len()
+            ],
+            cregs: vec![
+                Word {
+                    bits: self.cbits as u16,
+                    data: Wrapping(0)
+                };
+                self.cregs.len()
+            ],
+
+            pc: 0,
+            qreg_sel: 0,
+
+            rng: thread_rng(),
         }
     }
 
@@ -200,10 +236,13 @@ impl<'a> Emulator<'a> {
             Inst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
             Inst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
             Inst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
-            Inst::P(qbit, rot) => self.apply_mat_1(&r1(rot.get_angle()), qbit),
+            Inst::Phase(qbit, rot) => self.apply_mat_1(&r1(rot.get_angle()), qbit),
             Inst::Ch(qbit1, qbit2) => self.apply_controlled_mat(&HADAMARD_MAT, vec![qbit1], qbit2),
             Inst::Cy(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Y_MAT, vec![qbit1], qbit2),
             Inst::Cz(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Z_MAT, vec![qbit1], qbit2),
+            Inst::CPhase(qbit1, qbit2, rot) => {
+                self.apply_controlled_mat(&r1(rot.get_angle()), vec![qbit1], qbit2)
+            }
             Inst::Swap(qbit1, qbit2) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
@@ -220,6 +259,58 @@ impl<'a> Emulator<'a> {
             Inst::SqrtX(qbit) => self.apply_mat_1(&SQRT_X_MAT, qbit),
             Inst::SqrtSwap(qbit1, qbit2) => self.apply_mat_2(&SQRT_SWAP_MAT, qbit1, qbit2),
 
+            Inst::Measure(qbit, creg, cbit) => {
+                let qreg = &mut self.qregs[self.qreg_sel];
+                let qbit_mask = 1 << qbit;
+
+                let mut prob = Complexf64::zero();
+
+                for state in 0..(1 << self.qbits) {
+                    if state & qbit_mask != 0 {
+                        continue;
+                    }
+
+                    let amplitude = qreg[state];
+                    prob += amplitude * amplitude
+                }
+
+                if prob.im != 0f64 {
+                    panic!("Invalid probability for qubit {}", qbit)
+                }
+                let prob = prob.re;
+                if prob == 0f64 || prob == 1f64 {
+                    self.cregs[creg].set_bit(cbit, prob == 0f64);
+                    return Ok(StepResult::Continue);
+                }
+                let rand = self.rng.gen::<f64>();
+
+                if rand < prob {
+                    for state in 0..(1 << self.qbits) {
+                        if state & qbit_mask == 0 {
+                            continue;
+                        }
+                        qreg[state] = Complex::zero()
+                    }
+                    self.cregs[creg].set_bit(cbit, false)
+                } else {
+                    for state in 0..(1 << self.qbits) {
+                        if state & qbit_mask != 0 {
+                            continue;
+                        }
+                        qreg[state] = Complex::zero()
+                    }
+                    self.cregs[creg].set_bit(cbit, true)
+                }
+
+                let sqrtsumsq = {
+                    let sumsq = qreg.iter().map(|x| x * x).sum::<Complexf64>();
+                    sumsq.sqrt()
+                };
+                for x in qreg.iter_mut() {
+                    *x = *x / sqrtsumsq
+                }
+            }
+
             // Classical Instructions
             Inst::Add(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
@@ -231,6 +322,10 @@ impl<'a> Emulator<'a> {
         }
 
         Ok(StepResult::Continue)
+    }
+
+    pub fn get_cregs_state(&self) -> &Vec<Word> {
+        &self.cregs
     }
 
     fn get_val(&self, thing: Operand) -> Wrapping<i64> {
@@ -335,27 +430,29 @@ impl<'a> Display for Emulator<'a> {
         for qreg in &self.qregs {
             write!(f, "{}", qreg)?
         }
-        writeln!(f, "],")?;
-
-        write!(f, "cregs={:?}", self.cregs)?;
+        write!(f, "]")?;
 
         Ok(())
     }
 }
 
 #[derive(Clone, Copy)]
-struct Word {
+pub struct Word {
     pub bits: u16,
     pub data: Wrapping<i64>,
 }
 
 impl Word {
     pub fn get_val(&self) -> Wrapping<i64> {
-        self.data & Wrapping(((1 << self.bits) as i64).wrapping_sub(1))
+        self.data
     }
 
     pub fn set_to(&mut self, val: Wrapping<i64>) {
         self.data = val & Wrapping(((1 << self.bits) as i64).wrapping_sub(1))
+    }
+
+    pub fn set_bit(&mut self, bit: usize, val: bool) {
+        self.set_to(self.data & Wrapping(!(1 << bit)) | Wrapping((val as i64) << bit))
     }
 }
 
