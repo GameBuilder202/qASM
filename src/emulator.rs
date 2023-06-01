@@ -258,6 +258,21 @@ impl<'a> Emulator<'a> {
             }
             Inst::SqrtX(qbit) => self.apply_mat_1(&SQRT_X_MAT, qbit),
             Inst::SqrtSwap(qbit1, qbit2) => self.apply_mat_2(&SQRT_SWAP_MAT, qbit1, qbit2),
+            Inst::CSwap(qbit1, qbit2, qbit3) => {
+                let qreg = &mut self.qregs[self.qreg_sel];
+
+                let qbit1_mask = 1 << qbit1;
+                let qbit2_mask = 1 << qbit2;
+                let qbit3_mask = 1 << qbit3;
+
+                for state in 0..(1 << self.qbits) {
+                    if state & qbit1_mask == 0 || state & qbit2_mask != 0 || state & qbit3_mask != 0
+                    {
+                        continue;
+                    }
+                    qreg.swap_rows(state | qbit2_mask, state | qbit3_mask)
+                }
+            }
 
             Inst::Measure(qbit, creg, cbit) => {
                 let qreg = &mut self.qregs[self.qreg_sel];

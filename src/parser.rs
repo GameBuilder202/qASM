@@ -194,6 +194,15 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         .then_ignore(repeated(just(' ')))
                         .then(qbit)
                         .map(|(qbit1, qbit2)| Inst::SqrtSwap(qbit1, qbit2)),
+                    just("cswap")
+                        .then(repeated(just(' ')))
+                        .ignore_then(qbit)
+                        .then_ignore(repeated(just(' ')))
+                        .then(qbit)
+                        .then_ignore(repeated(just(' ')))
+                        .then(qbit)
+                        .map(|tup| FlattenTuple1::into_flatten(tup))
+                        .map(|(control, qbit1, qbit2)| Inst::CSwap(control, qbit1, qbit2)),
                 )),
                 just("m")
                     .then(repeated(just(' ')))

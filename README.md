@@ -9,10 +9,10 @@ Currently there are no prebuilt binaries so you will have to use cargo manually 
 The general layout of qASM code is:
 
 ```
-qbits <n>
-cbits <n>
-qregs <n>
-cregs <n>
+qbits n
+cbits n
+qregs n
+cregs n
 
 <code>
 
@@ -22,18 +22,18 @@ hlt
 The order of the headers is important and should not be changed. The `qbits` header specifies the number of
 qubits in each quantum register. The `cbits` header specifies the number of classical bits in each classical
 register. The `qregs` header specifies the number of quantum registers. The `cregs` header specifies the number
-of classical registers. Each header should be followed by a non-negative number. Operands/arguments for each
+of classical registers. The `n` after each header is any non-negative number. Operands/arguments for each
 instructions are delimited by spaces and not commas.
 
 The general format for quantum instructions are:
 ```
-<op> q<n> <other arguments>
+op qn <other arguments>
 ```
-Where `<op>` is the name/opcode, `q<n>` specifies a specific qubit `n` of the currently selected quantum register.
+Where `op` is the name/opcode, `qn` specifies a specific qubit `n` of the currently selected quantum register.
 `<other arguments>` can include more qubits as arguments, or in the case of some instructions, a rotation expressed
-as a rational multiple of pi, in the format `[<n>]pi[/<n>]`, where `<n>` can be any non-negative number, and items
+as a rational multiple of pi, in the format `[n]pi[/n]`, where `n` can be any non-negative number, and items
 in `[]` are optional. Quantum registers can be selected via the `qsel` instruction, which has the general format
-`qsel qr<n>` where `<n>` is any non-negative number.
+`qsel qrn` where `n` is any non-negative number.
 
 List of currently implemented quantum instructions:
 
@@ -58,16 +58,17 @@ List of currently implemented quantum instructions:
 | Controlled Pauli Y  | cy               | `cy q0 q1`          | Applies a controlled Pauli Y to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Z  | cz               | `cz q0 q1`          | Applies a controlled Pauli Z to qubit 1 with qubit 0 being the control |
 | Controlled Phase    | cp               | `cp q0 q1 pi/2`     | Applies a controlled Phase gate to qubit 1 of pi/2 radians with qubit 0 being the control |
-| Swap                | swap             | `swap q0 q1`        | Swaps the states of qubits 0 and 1 |
+| Swap                | swap             | `swap q0 q1`        | Swaps the state of qubits 0 and 1 |
 | Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(Pauli X) to qubit 0 |
 | Square Root Swap    | sqrtswp          | `sqrtswp q0 q1`     | Applies a sqrt(Swap) to qubits 0 and 1, halfway swapping their state |
+| Controlled Swap     | cswap            | `cswap q0 q1 q2`    | Swaps the state of qubits 1 and 2 with qubit 0 being the control |
 | Measure             | m                | `m q0 cr1 c3`       | Measures the state of qubit 0 into 3rd bit of classical register 1 |
 
 General format for classical instructions are:
 ```
-<op> <operands>
+op <operands>
 ```
-Where `<op>` is the name/opcode, operands may include `cr<n>`, which specifies a specific classical register `<n>`, or
+Where `op` is the name/opcode, operands may include `crn`, which specifies a specific classical register `n`, or
 an immediate literal value (for now non-negative due to not implemented in parser yet) Other than these differences,
 they behave basically the same as any other assembly language instructions.
 

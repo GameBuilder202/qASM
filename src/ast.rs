@@ -32,6 +32,7 @@ pub enum Inst {
     Swap(usize, usize),
     SqrtX(usize),
     SqrtSwap(usize, usize),
+    CSwap(usize, usize, usize),
     Measure(usize, usize, usize),
 
     // Classical Instructions
