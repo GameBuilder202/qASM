@@ -74,9 +74,27 @@ they behave basically the same as any other assembly language instructions.
 
 List of currently implemented classical instructions:
 
+*Note: The value of a register refers to the value stored in the register. The value of an immediate is the immediate number itself.*
+
+*Note 2: An operand can either be a register or immediate unless a restriction is specified.*
+
 | Instruction name | Description |
 | ---------------- | ----------- |
-| add              | Takes 3 arguments, first being a register and the other 2 being either a register or immediate. Puts the sum of the immediates/values in the registers into the first register |
+| add              | op1 = op2 + op3. op1 is always a register. |
+| sub              | op1 = op2 - op3. op1 is always a register. |
+| mult             | op1 = op2 * op3. op1 is always a register. All values are treated unsigned. |
+| umult            | op1 = (op2 * op3) >> (cbits/2). op1 is always a register. All values are treated unsigned. |
+| div              | op1 = op2 / op3. op1 is always a register. Performs integer division. All values are treated unsigned. |
+| smult            | op1 = op2 * op3. op1 is always a register. All values are treated signed. |
+| sumult           | op1 = (op2 * op3) >> (cbits/2). op1 is always a register. All values are treated signed. |
+| sdiv             | op1 = op2 / op3. op1 is always a register. Performs integer division. All values are treated signed. |
+| not              | op1 = ~op2. op1 is always a register. |
+| and              | op1 = op2 & op3. op1 is always a register. |
+| or               | op1 = op2 \| op3. op1 is always a register. |
+| xor              | op1 = op2 ^ op3. op1 is always a register. |
+| nand             | op1 = ~(op2 & op3). op1 is always a register. |
+| nor              | op1 = ~(op2 \| op3). op1 is always a register. |
+| xnor             | op1 = ~(op2 ^ op3). op1 is always a register. |
 
 # Examples
 This program simulates the $\ket{\Phi^+}$ bell state:

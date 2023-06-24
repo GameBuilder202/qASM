@@ -37,6 +37,20 @@ pub enum Inst {
 
     // Classical Instructions
     Add(usize, Operand, Operand),
+    Sub(usize, Operand, Operand),
+    Mul(usize, Operand, Operand),
+    UMul(usize, Operand, Operand),
+    Div(usize, Operand, Operand),
+    SMul(usize, Operand, Operand),
+    SUMul(usize, Operand, Operand),
+    SDiv(usize, Operand, Operand),
+    Not(usize, Operand),
+    And(usize, Operand, Operand),
+    Or(usize, Operand, Operand),
+    Xor(usize, Operand, Operand),
+    Nand(usize, Operand, Operand),
+    Nor(usize, Operand, Operand),
+    Xnor(usize, Operand, Operand),
 
     Hlt,
 }

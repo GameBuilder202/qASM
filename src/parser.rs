@@ -220,21 +220,229 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         )
                     }),
                 // Classical Instructions
-                choice((just("add")
-                    .then(repeated(just(' ')))
-                    .ignore_then(creg)
-                    .then_ignore(repeated(just(' ')))
-                    .then(creg.or(imm))
-                    .then_ignore(repeated(just(' ')))
-                    .then(creg.or(imm))
-                    .map(|ops| ops.into_flatten())
-                    .map(|(dst, src1, src2)| {
-                        Inst::Add(
-                            extract_pat!(dst => Operand::Reg(v) else unreachable!()),
-                            src1,
-                            src2,
-                        )
-                    }),)),
+                choice((
+                    just("add")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Add(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("sub")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Sub(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("mul")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Mul(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("umul")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::UMul(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("div")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Div(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("smul")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::SMul(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("sumul")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::SUMul(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("sdiv")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::SDiv(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("not")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|(dst, src)| {
+                            Inst::Not(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src,
+                            )
+                        }),
+                    just("and")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::And(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("or")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Or(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("xor")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Xor(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("nand")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Nand(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("nor")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Nor(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                    just("xnor")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|ops| ops.into_flatten())
+                        .map(|(dst, src1, src2)| {
+                            Inst::Xnor(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src1,
+                                src2,
+                            )
+                        }),
+                )),
                 just("hlt").to(Inst::Hlt),
             ))
             .then_ignore(repeated(text::newline()))

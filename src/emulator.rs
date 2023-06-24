@@ -332,6 +332,78 @@ impl<'a> Emulator<'a> {
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 + val2);
             }
+            Inst::Sub(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(val1 - val2);
+            }
+            Inst::Mul(r1, r2, r3) => {
+                let val1 = self.get_val(r2).0 as u64;
+                let val2 = self.get_val(r3).0 as u64;
+                let val = val1.wrapping_mul(val2) as i64;
+                self.cregs[r1].set_to(Wrapping(val));
+            }
+            Inst::UMul(r1, r2, r3) => {
+                let val1 = self.get_val(r2).0 as u64;
+                let val2 = self.get_val(r3).0 as u64;
+                let val = val1.wrapping_mul(val2) as i64;
+                self.cregs[r1].set_to(Wrapping(val >> 32));
+            }
+            Inst::Div(r1, r2, r3) => {
+                let val1 = self.get_val(r2).0 as u64;
+                let val2 = self.get_val(r3).0 as u64;
+                let val = (val1 / val2) as i64;
+                self.cregs[r1].set_to(Wrapping(val));
+            }
+            Inst::SMul(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(val1 * val2);
+            }
+            Inst::SUMul(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to((val1 * val2) >> 32);
+            }
+            Inst::SDiv(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(val1 / val2);
+            }
+            Inst::Not(r1, r2) => {
+                let val1 = self.get_val(r2);
+                self.cregs[r1].set_to(!val1);
+            }
+            Inst::And(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(val1 & val2);
+            }
+            Inst::Or(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(val1 | val2);
+            }
+            Inst::Xor(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(val1 ^ val2);
+            }
+            Inst::Nand(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(!(val1 & val2));
+            }
+            Inst::Nor(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(!(val1 | val2));
+            }
+            Inst::Xnor(r1, r2, r3) => {
+                let val1 = self.get_val(r2);
+                let val2 = self.get_val(r3);
+                self.cregs[r1].set_to(!(val1 ^ val2));
+            }
 
             Inst::Hlt => return Ok(StepResult::Halted),
         }
