@@ -4,6 +4,14 @@ use crate::ast::*;
 
 pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let num = text::int(10).map(|s: String| s.parse::<usize>().unwrap());
+    let signed_num = just("-").or_not().then(num.or_not()).map(|(c, num)| {
+        let num = if num.is_some() { num.unwrap() } else { 1 };
+        if c.is_none() {
+            num as isize
+        } else {
+            -(num as isize)
+        }
+    });
 
     let qbits_header = just("qbits")
         .then(repeated(just(' ')))
@@ -23,15 +31,11 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let cbit = just('c').ignore_then(num);
     let imm = num.map(|num| Operand::Imm(num as i64));
 
-    let rot = num
-        .or_not()
+    let rot = signed_num
         .then_ignore(just("pi"))
         .then(just('/').ignore_then(num).or_not())
         .map(|rot| {
-            let mlt = match rot.0 {
-                Some(mlt) => mlt as u64,
-                None => 1,
-            };
+            let mlt = rot.0 as i64;
             let div = match rot.1 {
                 Some(div) => div as u64,
                 None => 1,
@@ -443,16 +447,19 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                             )
                         }),
                 )),
-                just("hlt").to(Inst::Hlt),
+                // Misc
+                choice((
+                    text::ident()
+                        .then_ignore(just(":"))
+                        .map(|ident| Inst::Label(ident)),
+                    just("hlt").to(Inst::Hlt),
+                )),
             ))
             .then_ignore(repeated(text::newline()))
             .repeated(),
         )
         .then_ignore(end())
-        .map(|p| Program {
-            headers: p.0,
-            instructions: p.1,
-        })
+        .map(|p| resolve_ast(p.0, p.1))
 }
 
 fn repeated<I, O>(

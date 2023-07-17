@@ -180,21 +180,21 @@ impl<'a> Emulator<'a> {
     }
 
     fn step(&mut self) -> Result<StepResult, EmulatorError> {
-        let Some(&inst) = self.prog.instructions.get(self.pc) else {
+        let Some(inst) = self.prog.instructions.get(self.pc) else {
             return Err(EmulatorError::PCOutOfBounds)
         };
 
-        match inst {
+        match *inst {
             // Quantum Instructions
-            Inst::Qsel(qreg) => {
+            ResolvedInst::Qsel(qreg) => {
                 if qreg > self.qregs.len() {
                     return Err(EmulatorError::QregIndexOutOfBounds);
                 }
                 self.qreg_sel = qreg
             }
-            Inst::Id(qbit) => self.apply_mat_1(&MAT_2_IDENTITY, qbit),
-            Inst::Hadamard(qbit) => self.apply_mat_1(&HADAMARD_MAT, qbit),
-            Inst::Cnot(qbit1, qbit2) => {
+            ResolvedInst::Id(qbit) => self.apply_mat_1(&MAT_2_IDENTITY, qbit),
+            ResolvedInst::Hadamard(qbit) => self.apply_mat_1(&HADAMARD_MAT, qbit),
+            ResolvedInst::Cnot(qbit1, qbit2) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -207,7 +207,7 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit2_mask)
                 }
             }
-            Inst::Ccnot(qbit1, qbit2, qbit3) => {
+            ResolvedInst::Ccnot(qbit1, qbit2, qbit3) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -222,28 +222,34 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit3_mask)
                 }
             }
-            Inst::X(qbit) => self.apply_mat_1(&PAULI_X_MAT, qbit),
-            Inst::Y(qbit) => self.apply_mat_1(&PAULI_Y_MAT, qbit),
-            Inst::Z(qbit) => self.apply_mat_1(&PAULI_Z_MAT, qbit),
-            Inst::Rx(qbit, rot) => self.apply_mat_1(&rx(rot.get_angle()), qbit),
-            Inst::Ry(qbit, rot) => self.apply_mat_1(&ry(rot.get_angle()), qbit),
-            Inst::Rz(qbit, rot) => self.apply_mat_1(&rz(rot.get_angle()), qbit),
-            Inst::U(qbit, theta, phi, lambda) => self.apply_mat_1(
+            ResolvedInst::X(qbit) => self.apply_mat_1(&PAULI_X_MAT, qbit),
+            ResolvedInst::Y(qbit) => self.apply_mat_1(&PAULI_Y_MAT, qbit),
+            ResolvedInst::Z(qbit) => self.apply_mat_1(&PAULI_Z_MAT, qbit),
+            ResolvedInst::Rx(qbit, rot) => self.apply_mat_1(&rx(rot.get_angle()), qbit),
+            ResolvedInst::Ry(qbit, rot) => self.apply_mat_1(&ry(rot.get_angle()), qbit),
+            ResolvedInst::Rz(qbit, rot) => self.apply_mat_1(&rz(rot.get_angle()), qbit),
+            ResolvedInst::U(qbit, theta, phi, lambda) => self.apply_mat_1(
                 &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
                 qbit,
             ),
-            Inst::S(qbit) => self.apply_mat_1(&S_MAT, qbit),
-            Inst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
-            Inst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
-            Inst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
-            Inst::Phase(qbit, rot) => self.apply_mat_1(&r1(rot.get_angle()), qbit),
-            Inst::Ch(qbit1, qbit2) => self.apply_controlled_mat(&HADAMARD_MAT, vec![qbit1], qbit2),
-            Inst::Cy(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Y_MAT, vec![qbit1], qbit2),
-            Inst::Cz(qbit1, qbit2) => self.apply_controlled_mat(&PAULI_Z_MAT, vec![qbit1], qbit2),
-            Inst::CPhase(qbit1, qbit2, rot) => {
+            ResolvedInst::S(qbit) => self.apply_mat_1(&S_MAT, qbit),
+            ResolvedInst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
+            ResolvedInst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
+            ResolvedInst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
+            ResolvedInst::Phase(qbit, rot) => self.apply_mat_1(&r1(rot.get_angle()), qbit),
+            ResolvedInst::Ch(qbit1, qbit2) => {
+                self.apply_controlled_mat(&HADAMARD_MAT, vec![qbit1], qbit2)
+            }
+            ResolvedInst::Cy(qbit1, qbit2) => {
+                self.apply_controlled_mat(&PAULI_Y_MAT, vec![qbit1], qbit2)
+            }
+            ResolvedInst::Cz(qbit1, qbit2) => {
+                self.apply_controlled_mat(&PAULI_Z_MAT, vec![qbit1], qbit2)
+            }
+            ResolvedInst::CPhase(qbit1, qbit2, rot) => {
                 self.apply_controlled_mat(&r1(rot.get_angle()), vec![qbit1], qbit2)
             }
-            Inst::Swap(qbit1, qbit2) => {
+            ResolvedInst::Swap(qbit1, qbit2) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -256,9 +262,9 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state | qbit1_mask, state | qbit2_mask)
                 }
             }
-            Inst::SqrtX(qbit) => self.apply_mat_1(&SQRT_X_MAT, qbit),
-            Inst::SqrtSwap(qbit1, qbit2) => self.apply_mat_2(&SQRT_SWAP_MAT, qbit1, qbit2),
-            Inst::CSwap(qbit1, qbit2, qbit3) => {
+            ResolvedInst::SqrtX(qbit) => self.apply_mat_1(&SQRT_X_MAT, qbit),
+            ResolvedInst::SqrtSwap(qbit1, qbit2) => self.apply_mat_2(&SQRT_SWAP_MAT, qbit1, qbit2),
+            ResolvedInst::CSwap(qbit1, qbit2, qbit3) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -274,7 +280,7 @@ impl<'a> Emulator<'a> {
                 }
             }
 
-            Inst::Measure(qbit, creg, cbit) => {
+            ResolvedInst::Measure(qbit, creg, cbit) => {
                 let qreg = &mut self.qregs[self.qreg_sel];
                 let qbit_mask = 1 << qbit;
 
@@ -327,85 +333,85 @@ impl<'a> Emulator<'a> {
             }
 
             // Classical Instructions
-            Inst::Add(r1, r2, r3) => {
+            ResolvedInst::Add(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 + val2);
             }
-            Inst::Sub(r1, r2, r3) => {
+            ResolvedInst::Sub(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 - val2);
             }
-            Inst::Mul(r1, r2, r3) => {
+            ResolvedInst::Mul(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
                 let val = val1.wrapping_mul(val2) as i64;
                 self.cregs[r1].set_to(Wrapping(val));
             }
-            Inst::UMul(r1, r2, r3) => {
+            ResolvedInst::UMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
                 let val = val1.wrapping_mul(val2) as i64;
                 self.cregs[r1].set_to(Wrapping(val >> 32));
             }
-            Inst::Div(r1, r2, r3) => {
+            ResolvedInst::Div(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
                 let val = (val1 / val2) as i64;
                 self.cregs[r1].set_to(Wrapping(val));
             }
-            Inst::SMul(r1, r2, r3) => {
+            ResolvedInst::SMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 * val2);
             }
-            Inst::SUMul(r1, r2, r3) => {
+            ResolvedInst::SUMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to((val1 * val2) >> 32);
             }
-            Inst::SDiv(r1, r2, r3) => {
+            ResolvedInst::SDiv(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 / val2);
             }
-            Inst::Not(r1, r2) => {
+            ResolvedInst::Not(r1, r2) => {
                 let val1 = self.get_val(r2);
                 self.cregs[r1].set_to(!val1);
             }
-            Inst::And(r1, r2, r3) => {
+            ResolvedInst::And(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 & val2);
             }
-            Inst::Or(r1, r2, r3) => {
+            ResolvedInst::Or(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 | val2);
             }
-            Inst::Xor(r1, r2, r3) => {
+            ResolvedInst::Xor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(val1 ^ val2);
             }
-            Inst::Nand(r1, r2, r3) => {
+            ResolvedInst::Nand(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(!(val1 & val2));
             }
-            Inst::Nor(r1, r2, r3) => {
+            ResolvedInst::Nor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(!(val1 | val2));
             }
-            Inst::Xnor(r1, r2, r3) => {
+            ResolvedInst::Xnor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
                 self.cregs[r1].set_to(!(val1 ^ val2));
             }
 
-            Inst::Hlt => return Ok(StepResult::Halted),
+            ResolvedInst::Hlt => return Ok(StepResult::Halted),
         }
 
         Ok(StepResult::Continue)

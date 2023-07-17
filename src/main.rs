@@ -64,10 +64,10 @@ struct Args {
     input_file: String,
 
     /// Number of times to run the program for statistics information
-    #[clap(long = "shots", default_value_t = 1024)]
+    #[clap(short = 's', long = "shots", default_value_t = 1024)]
     shots: u64,
 
     /// Print the statevectors of the quantum registers and terminate the program (note: measurement operations are not ignored, use before adding measurements)
-    #[clap(long = "print-state", default_value_t = false, action = ArgAction::SetTrue)]
+    #[clap(short = 'p', long = "print-state", default_value_t = false, action = ArgAction::SetTrue)]
     print_emu_state: bool,
 }
