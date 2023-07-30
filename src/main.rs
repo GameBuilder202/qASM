@@ -33,8 +33,7 @@ fn main() {
             let cregs = emulator.get_cregs_state();
             for (creg, res) in cregs.iter().zip(results.iter_mut()) {
                 let val1 = creg.get_val().0;
-                let val2 = res[val1 as usize];
-                res[val1 as usize] = val2 + 1
+                res[val1 as usize] += 1
             }
 
             emulator.reset()

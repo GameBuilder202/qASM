@@ -125,7 +125,7 @@ impl<'a> Emulator<'a> {
             ],
             cregs: vec![
                 Word {
-                    bits: cbits as u16,
+                    bits: cbits,
                     data: Wrapping(0),
                 };
                 cregs
@@ -154,7 +154,7 @@ impl<'a> Emulator<'a> {
             ],
             cregs: vec![
                 Word {
-                    bits: self.cbits as u16,
+                    bits: self.cbits,
                     data: Wrapping(0)
                 };
                 self.cregs.len()
@@ -328,7 +328,7 @@ impl<'a> Emulator<'a> {
                     sumsq.sqrt()
                 };
                 for x in qreg.iter_mut() {
-                    *x = *x / sqrtsumsq
+                    *x /= sqrtsumsq
                 }
             }
 

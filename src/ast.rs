@@ -13,11 +13,8 @@ pub fn resolve_ast(headers: (u16, u16, usize, usize), ast: Vec<Inst>) -> Program
 
     // Get all labels from the AST
     for (i, inst) in ast.iter().enumerate() {
-        match inst {
-            Inst::Label(name) => {
-                label_map.insert(name, i);
-            }
-            _ => {}
+        if let Inst::Label(name) = inst {
+            label_map.insert(name, i);
         }
     }
 

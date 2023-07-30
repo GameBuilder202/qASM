@@ -5,7 +5,7 @@ use crate::ast::*;
 pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let num = text::int(10).map(|s: String| s.parse::<usize>().unwrap());
     let signed_num = just("-").or_not().then(num.or_not()).map(|(c, num)| {
-        let num = if num.is_some() { num.unwrap() } else { 1 };
+        let num = if let Some(num) = num { num } else { 1 };
         if c.is_none() {
             num as isize
         } else {
@@ -26,7 +26,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let cregs_header = just("cregs").then(repeated(just(' '))).ignore_then(num);
 
     let qreg = just("qr").ignore_then(num);
-    let creg = just("cr").ignore_then(num).map(|creg| Operand::Reg(creg));
+    let creg = just("cr").ignore_then(num).map(Operand::Reg);
     let qbit = just('q').ignore_then(num);
     let cbit = just('c').ignore_then(num);
     let imm = num.map(|num| Operand::Imm(num as i64));
@@ -60,7 +60,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .then_ignore(repeated(text::newline()))
         .then(cregs_header)
         .then_ignore(repeated(text::newline()))
-        .map(|tup| FlattenTuple2::into_flatten(tup))
+        .map(FlattenTuple2::into_flatten)
         .then(
             choice((
                 // Quantum Instructions
@@ -68,15 +68,15 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     just("qsel")
                         .then(repeated(just(' ')))
                         .ignore_then(qreg)
-                        .map(|qreg| Inst::Qsel(qreg)),
+                        .map(Inst::Qsel),
                     just("id")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::Id(qbit)),
+                        .map(Inst::Id),
                     just("h")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::Hadamard(qbit)),
+                        .map(Inst::Hadamard),
                     just("cnot")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
@@ -90,20 +90,20 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         .then(qbit)
                         .then_ignore(repeated(just(' ')))
                         .then(qbit)
-                        .map(|tup| FlattenTuple1::into_flatten(tup))
+                        .map(FlattenTuple1::into_flatten)
                         .map(|(qbit1, qbit2, qbit3)| Inst::Ccnot(qbit1, qbit2, qbit3)),
                     just('x')
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::X(qbit)),
+                        .map(Inst::X),
                     just('y')
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::Y(qbit)),
+                        .map(Inst::Y),
                     just('z')
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::Z(qbit)),
+                        .map(Inst::Z),
                     just("rx")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
@@ -131,24 +131,24 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         .then(rot)
                         .then_ignore(repeated(just(' ')))
                         .then(rot)
-                        .map(|tup| FlattenTuple2::into_flatten(tup))
+                        .map(FlattenTuple2::into_flatten)
                         .map(|(qbit, rot1, rot2, rot3)| Inst::U(qbit, rot1, rot2, rot3)),
                     just("s")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::S(qbit)),
+                        .map(Inst::S),
                     just("t")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::T(qbit)),
+                        .map(Inst::T),
                     just("sdg")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::Sdg(qbit)),
+                        .map(Inst::Sdg),
                     just("tdg")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::Tdg(qbit)),
+                        .map(Inst::Tdg),
                     just("p")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
@@ -180,7 +180,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         .then(qbit)
                         .then_ignore(repeated(just(' ')))
                         .then(rot)
-                        .map(|tup| FlattenTuple1::into_flatten(tup))
+                        .map(FlattenTuple1::into_flatten)
                         .map(|(control, qbit, rot)| Inst::CPhase(control, qbit, rot)),
                     just("swap")
                         .then(repeated(just(' ')))
@@ -191,7 +191,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     just("sqrtx")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
-                        .map(|qbit| Inst::SqrtX(qbit)),
+                        .map(Inst::SqrtX),
                     just("sqrtswp")
                         .then(repeated(just(' ')))
                         .ignore_then(qbit)
@@ -205,7 +205,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         .then(qbit)
                         .then_ignore(repeated(just(' ')))
                         .then(qbit)
-                        .map(|tup| FlattenTuple1::into_flatten(tup))
+                        .map(FlattenTuple1::into_flatten)
                         .map(|(control, qbit1, qbit2)| Inst::CSwap(control, qbit1, qbit2)),
                 )),
                 just("m")
@@ -215,7 +215,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .then(creg)
                     .then_ignore(repeated(just(' ')))
                     .then(cbit)
-                    .map(|tup| FlattenTuple1::into_flatten(tup))
+                    .map(FlattenTuple1::into_flatten)
                     .map(|(qbit, creg, cbit)| {
                         Inst::Measure(
                             qbit,
@@ -449,9 +449,7 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 )),
                 // Misc
                 choice((
-                    text::ident()
-                        .then_ignore(just(":"))
-                        .map(|ident| Inst::Label(ident)),
+                    text::ident().then_ignore(just(":")).map(Inst::Label),
                     just("hlt").to(Inst::Hlt),
                 )),
             ))
