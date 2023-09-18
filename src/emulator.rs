@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::f64::consts::{
     FRAC_1_SQRT_2 as ONE_BY_ROOT_2, FRAC_PI_2 as PI_BY_2, FRAC_PI_4 as PI_BY_4,
 };
@@ -11,6 +12,8 @@ use num_traits::{One, Zero};
 use nalgebra::{dmatrix, DMatrix};
 use nalgebra::{Complex, ComplexField};
 use nalgebra::{DVector, Vector2, Vector4};
+
+use bitvec::prelude::{BitArr, BitArray, Lsb0};
 
 use rand::Rng;
 use rand::{rngs::ThreadRng, thread_rng};
@@ -99,6 +102,7 @@ pub struct Emulator<'a> {
 
     pc: usize,
     qreg_sel: usize,
+    flags: BitArr!(for 3, in u8, Lsb0),
 
     rng: ThreadRng,
 }
@@ -133,6 +137,7 @@ impl<'a> Emulator<'a> {
 
             pc: 0,
             qreg_sel: 0,
+            flags: BitArray::ZERO,
 
             rng: thread_rng(),
         }
@@ -162,6 +167,7 @@ impl<'a> Emulator<'a> {
 
             pc: 0,
             qreg_sel: 0,
+            flags: BitArray::ZERO,
 
             rng: thread_rng(),
         }
@@ -174,7 +180,9 @@ impl<'a> Emulator<'a> {
                 break;
             }
 
-            self.pc += 1
+            if res == StepResult::Continue {
+                self.pc += 1
+            }
         }
         Ok(())
     }
@@ -333,82 +341,148 @@ impl<'a> Emulator<'a> {
             }
 
             // Classical Instructions
+            ResolvedInst::Mov(r1, val) => {
+                let val = self.get_val(val);
+                self.cregs[r1].set_to(val)
+            }
             ResolvedInst::Add(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 + val2);
+                self.cregs[r1].set_to(val1 + val2)
             }
             ResolvedInst::Sub(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 - val2);
+                self.cregs[r1].set_to(val1 - val2)
             }
             ResolvedInst::Mul(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
                 let val = val1.wrapping_mul(val2) as i64;
-                self.cregs[r1].set_to(Wrapping(val));
+                self.cregs[r1].set_to(Wrapping(val))
             }
             ResolvedInst::UMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
                 let val = val1.wrapping_mul(val2) as i64;
-                self.cregs[r1].set_to(Wrapping(val >> 32));
+                self.cregs[r1].set_to(Wrapping(val >> 32))
             }
             ResolvedInst::Div(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
                 let val = (val1 / val2) as i64;
-                self.cregs[r1].set_to(Wrapping(val));
+                self.cregs[r1].set_to(Wrapping(val))
             }
             ResolvedInst::SMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 * val2);
+                self.cregs[r1].set_to(val1 * val2)
             }
             ResolvedInst::SUMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to((val1 * val2) >> 32);
+                self.cregs[r1].set_to((val1 * val2) >> 32)
             }
             ResolvedInst::SDiv(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 / val2);
+                self.cregs[r1].set_to(val1 / val2)
             }
             ResolvedInst::Not(r1, r2) => {
                 let val1 = self.get_val(r2);
-                self.cregs[r1].set_to(!val1);
+                self.cregs[r1].set_to(!val1)
             }
             ResolvedInst::And(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 & val2);
+                self.cregs[r1].set_to(val1 & val2)
             }
             ResolvedInst::Or(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 | val2);
+                self.cregs[r1].set_to(val1 | val2)
             }
             ResolvedInst::Xor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 ^ val2);
+                self.cregs[r1].set_to(val1 ^ val2)
             }
             ResolvedInst::Nand(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(!(val1 & val2));
+                self.cregs[r1].set_to(!(val1 & val2))
             }
             ResolvedInst::Nor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(!(val1 | val2));
+                self.cregs[r1].set_to(!(val1 | val2))
             }
             ResolvedInst::Xnor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(!(val1 ^ val2));
+                self.cregs[r1].set_to(!(val1 ^ val2))
+            }
+
+            // Misc
+            ResolvedInst::Cmp(r1, val) => {
+                let cmp = self.cregs[r1].get_val().cmp(&self.get_val(val));
+                match cmp {
+                    Ordering::Less => {
+                        self.flags.set(0, true);
+                        self.flags.set(1, false);
+                        self.flags.set(2, false);
+                    }
+                    Ordering::Equal => {
+                        self.flags.set(0, false);
+                        self.flags.set(1, true);
+                        self.flags.set(2, false);
+                    }
+                    Ordering::Greater => {
+                        self.flags.set(0, false);
+                        self.flags.set(1, false);
+                        self.flags.set(2, true);
+                    }
+                }
+            }
+            ResolvedInst::Jmp(offset) => {
+                self.pc = offset;
+                return Ok(StepResult::Branched);
+            }
+            ResolvedInst::Jeq(offset) => {
+                if self.flags[1] {
+                    self.pc = offset;
+                    return Ok(StepResult::Branched);
+                }
+            }
+            ResolvedInst::Jne(offset) => {
+                if !self.flags[1] {
+                    self.pc = offset;
+                    return Ok(StepResult::Branched);
+                }
+            }
+            ResolvedInst::Jg(offset) => {
+                if self.flags[2] {
+                    self.pc = offset;
+                    return Ok(StepResult::Branched);
+                }
+            }
+            ResolvedInst::Jge(offset) => {
+                if self.flags[1] || self.flags[2] {
+                    self.pc = offset;
+                    return Ok(StepResult::Branched);
+                }
+            }
+            ResolvedInst::Jl(offset) => {
+                if self.flags[0] {
+                    self.pc = offset;
+                    return Ok(StepResult::Branched);
+                }
+            }
+            ResolvedInst::Jle(offset) => {
+                if self.flags[0] || self.flags[1] {
+                    self.pc = offset;
+                    return Ok(StepResult::Branched);
+                }
             }
 
             ResolvedInst::Hlt => return Ok(StepResult::Halted),
@@ -567,6 +641,7 @@ impl Display for Word {
 enum StepResult {
     Halted,
     Continue,
+    Branched,
 }
 
 #[derive(Debug, Clone, Copy)]

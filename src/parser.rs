@@ -2,7 +2,7 @@ use chumsky::{combinator::Repeated, prelude::*};
 
 use crate::ast::*;
 
-pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
+pub fn parser() -> impl Parser<char, Result<Program, ResolveError>, Error = Simple<char>> {
     let num = text::int(10).map(|s: String| s.parse::<usize>().unwrap());
     let signed_num = just("-").or_not().then(num.or_not()).map(|(c, num)| {
         let num = if let Some(num) = num { num } else { 1 };
@@ -225,6 +225,17 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     }),
                 // Classical Instructions
                 choice((
+                    just("mov")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|(dst, src)| {
+                            Inst::Mov(
+                                extract_pat!(dst => Operand::Reg(v) else unreachable!()),
+                                src,
+                            )
+                        }),
                     just("add")
                         .then(repeated(just(' ')))
                         .ignore_then(creg)
@@ -449,6 +460,42 @@ pub fn parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 )),
                 // Misc
                 choice((
+                    just("cmp")
+                        .then(repeated(just(' ')))
+                        .ignore_then(creg)
+                        .then_ignore(repeated(just(' ')))
+                        .then(creg.or(imm))
+                        .map(|(r1, r2)| {
+                            Inst::Cmp(extract_pat!(r1 => Operand::Reg(v) else unreachable!()), r2)
+                        }),
+                    just("jmp")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jmp),
+                    just("jeq")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jeq),
+                    just("jne")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jne),
+                    just("jg")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jg),
+                    just("jge")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jge),
+                    just("jl")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jl),
+                    just("jle")
+                        .then(repeated(just(' ')))
+                        .ignore_then(text::ident())
+                        .map(Inst::Jle),
                     text::ident().then_ignore(just(":")).map(Inst::Label),
                     just("hlt").to(Inst::Hlt),
                 )),

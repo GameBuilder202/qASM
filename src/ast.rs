@@ -7,30 +7,84 @@ pub struct Program {
     pub instructions: Vec<ResolvedInst>,
 }
 
-pub fn resolve_ast(headers: (u16, u16, usize, usize), ast: Vec<Inst>) -> Program {
+pub fn resolve_ast(
+    headers: (u16, u16, usize, usize),
+    ast: Vec<Inst>,
+) -> Result<Program, ResolveError> {
     let mut label_map = HashMap::new();
     let mut resolved_insts: Vec<ResolvedInst> = Vec::new();
 
     // Get all labels from the AST
-    for (i, inst) in ast.iter().enumerate() {
+    let mut i = 0usize;
+    for inst in &ast {
         if let Inst::Label(name) = inst {
             label_map.insert(name, i);
+        } else {
+            i += 1
         }
     }
 
     // Update all instructions with the label map
-    for inst in ast {
+    for inst in &ast {
         match inst {
             Inst::Label(_) => {}
+
+            Inst::Jmp(name) => {
+                if let Some(offset) = label_map.get(name) {
+                    resolved_insts.push(ResolvedInst::Jmp(*offset))
+                } else {
+                    return Err(ResolveError::UndefinedLabel(name.clone()));
+                }
+            }
+
+            Inst::Jeq(name) => {
+                if let Some(offset) = label_map.get(name) {
+                    resolved_insts.push(ResolvedInst::Jeq(*offset))
+                } else {
+                    return Err(ResolveError::UndefinedLabel(name.clone()));
+                }
+            }
+
+            Inst::Jne(name) => {
+                if let Some(offset) = label_map.get(name) {
+                    resolved_insts.push(ResolvedInst::Jne(*offset))
+                } else {
+                    return Err(ResolveError::UndefinedLabel(name.clone()));
+                }
+            }
+
+            Inst::Jg(name) => {
+                if let Some(offset) = label_map.get(name) {
+                    resolved_insts.push(ResolvedInst::Jg(*offset))
+                } else {
+                    return Err(ResolveError::UndefinedLabel(name.clone()));
+                }
+            }
+
+            Inst::Jge(name) => {
+                if let Some(offset) = label_map.get(name) {
+                    resolved_insts.push(ResolvedInst::Jge(*offset))
+                } else {
+                    return Err(ResolveError::UndefinedLabel(name.clone()));
+                }
+            }
+
+            Inst::Jl(name) => {
+                if let Some(offset) = label_map.get(name) {
+                    resolved_insts.push(ResolvedInst::Jle(*offset))
+                } else {
+                    return Err(ResolveError::UndefinedLabel(name.clone()));
+                }
+            }
 
             default => resolved_insts.push(default.into()),
         }
     }
 
-    Program {
+    Ok(Program {
         headers,
         instructions: resolved_insts,
-    }
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +118,7 @@ pub enum Inst {
     Measure(usize, usize, usize),
 
     // Classical Instructions
+    Mov(usize, Operand),
     Add(usize, Operand, Operand),
     Sub(usize, Operand, Operand),
     Mul(usize, Operand, Operand),
@@ -81,6 +136,15 @@ pub enum Inst {
     Xnor(usize, Operand, Operand),
 
     // Misc
+    Cmp(usize, Operand),
+    Jmp(String),
+    Jeq(String),
+    Jne(String),
+    Jg(String),
+    Jge(String),
+    Jl(String),
+    Jle(String),
+
     Label(String),
     Hlt,
 }
@@ -116,6 +180,7 @@ pub enum ResolvedInst {
     Measure(usize, usize, usize),
 
     // Classical Instructions
+    Mov(usize, Operand),
     Add(usize, Operand, Operand),
     Sub(usize, Operand, Operand),
     Mul(usize, Operand, Operand),
@@ -133,13 +198,23 @@ pub enum ResolvedInst {
     Xnor(usize, Operand, Operand),
 
     // Misc
+    Cmp(usize, Operand),
+    Jmp(usize),
+    Jeq(usize),
+    Jne(usize),
+    Jg(usize),
+    Jge(usize),
+    Jl(usize),
+    Jle(usize),
+
     Hlt,
 }
 
-impl From<Inst> for ResolvedInst {
+impl From<&Inst> for ResolvedInst {
     // The most painful damn function ever to write
-    fn from(value: Inst) -> Self {
-        match value {
+    fn from(value: &Inst) -> Self {
+        match *value {
+            // Quantum instructions
             Inst::Qsel(q) => Self::Qsel(q),
             Inst::Id(q) => Self::Id(q),
             Inst::Hadamard(q) => Self::Hadamard(q),
@@ -166,6 +241,9 @@ impl From<Inst> for ResolvedInst {
             Inst::SqrtSwap(q1, q2) => Self::SqrtSwap(q1, q2),
             Inst::CSwap(q1, q2, q3) => Self::CSwap(q1, q2, q3),
             Inst::Measure(q, cr, cb) => Self::Measure(q, cr, cb),
+
+            // Classical Instructions
+            Inst::Mov(cr1, val) => Self::Mov(cr1, val),
             Inst::Add(cr1, cr2, cr3) => Self::Add(cr1, cr2, cr3),
             Inst::Sub(cr1, cr2, cr3) => Self::Sub(cr1, cr2, cr3),
             Inst::Mul(cr1, cr2, cr3) => Self::Mul(cr1, cr2, cr3),
@@ -181,6 +259,9 @@ impl From<Inst> for ResolvedInst {
             Inst::Nand(cr1, cr2, cr3) => Self::Nand(cr1, cr2, cr3),
             Inst::Nor(cr1, cr2, cr3) => Self::Nor(cr1, cr2, cr3),
             Inst::Xnor(cr1, cr2, cr3) => Self::Xnor(cr1, cr2, cr3),
+
+            // Misc
+            Inst::Cmp(cr1, val) => Self::Cmp(cr1, val),
             Inst::Hlt => Self::Hlt,
 
             _ => unreachable!(), /* Atleast hopefully unreachable if I didn't mess up stuff */
@@ -200,4 +281,9 @@ impl Rotation {
     pub fn get_angle(&self) -> f64 {
         (self.0 as f64) * std::f64::consts::PI / (self.1 as f64)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveError {
+    UndefinedLabel(String),
 }

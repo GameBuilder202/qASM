@@ -25,6 +25,7 @@ register. The `qregs` header specifies the number of quantum registers. The `cre
 of classical registers. The `n` after each header is any non-negative number. Operands/arguments for each
 instructions are delimited by spaces and not commas.
 
+## Quantum Instructions
 The general format for quantum instructions are:
 ```
 op qn <other arguments>
@@ -64,6 +65,7 @@ List of currently implemented quantum instructions:
 | Controlled Swap     | cswap            | `cswap q0 q1 q2`    | Swaps the state of qubits 1 and 2 with qubit 0 being the control |
 | Measure             | m                | `m q0 cr1 c3`       | Measures the state of qubit 0 into 3rd bit of classical register 1 |
 
+## Classical Instructions
 General format for classical instructions are:
 ```
 op <operands>
@@ -95,6 +97,21 @@ List of currently implemented classical instructions:
 | nand             | op1 = ~(op2 & op3). op1 is always a register. |
 | nor              | op1 = ~(op2 \| op3). op1 is always a register. |
 | xnor             | op1 = ~(op2 ^ op3). op1 is always a register. |
+
+## Misc. Instructions
+These instructions are here because I wanted them separate from [Classical Instructions](#classical-instructions)
+
+| Instruction name | Description |
+| ---------------- | ----------- |
+| cmp              | Updates flags based on comparing values in op1 and op2. op1 is always a register. |
+| jmp              | Unconditionally jump to a label. |
+| jeq              | Jump to label if comparison resulted in EQ flag set. |
+| jne              | Jump to label if comparsion did not result in EQ flag set. |
+| jg               | Jump to label if comparison resulted in GREATER flag set. |
+| jge              | Jump to label if comparison resulted in GREATER or RQ flag set. |
+| jl               | Jump to label if comparison resulted in LESSER flag set. |
+| jle              | Jump to label if comparison resulted in LESSER or EQ flag set. |
+| hlt              | Halt the program. |
 
 # Examples
 This program simulates the $\ket{\Phi^+}$ bell state:

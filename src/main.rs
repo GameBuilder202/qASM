@@ -7,6 +7,7 @@ pub mod ast;
 pub mod emulator;
 pub mod parser;
 
+use ast::ResolveError;
 use emulator::Emulator;
 
 fn main() {
@@ -18,42 +19,57 @@ fn main() {
     let ast = parser::parser().parse(contents);
 
     if let Ok(prog) = ast {
-        let mut emulator = Emulator::new(&prog);
-        let mut results = vec![vec![0u64; 1 << prog.headers.1]; prog.headers.3];
+        if let Ok(prog) = prog {
+            // println!("{:#?}, {}", prog.instructions, prog.instructions.len());
+            // println!("-- {:?}", prog.instructions[10]);
 
-        if args.print_emu_state {
-            emulator.run().unwrap();
-            println!("{}", emulator);
-            return;
-        }
+            let mut emulator = Emulator::new(&prog);
+            let mut results = vec![vec![0u64; 1 << prog.headers.1]; prog.headers.3];
 
-        for _ in 0..args.shots {
-            emulator.run().unwrap();
-
-            let cregs = emulator.get_cregs_state();
-            for (creg, res) in cregs.iter().zip(results.iter_mut()) {
-                let val1 = creg.get_val().0;
-                res[val1 as usize] += 1
+            if args.print_emu_state {
+                emulator.run().unwrap();
+                println!("{}", emulator);
+                return;
             }
 
-            emulator.reset()
-        }
+            for _ in 0..args.shots {
+                emulator.run().unwrap();
 
-        println!("creg statistics:");
-        for (i, result) in (0..results.len()).zip(results.iter()) {
-            println!("creg {} stat:", i);
-            let sum = result.iter().sum::<u64>() as f64;
-            for (j, res) in (0..result.len()).zip(result.iter()) {
-                println!(
-                    "[STATE {:01$b}] freq: {2};\tprob: {3:.5}",
-                    j,
-                    prog.headers.1 as usize,
-                    res,
-                    (*res as f64) / sum
-                )
+                let cregs = emulator.get_cregs_state();
+                for (creg, res) in cregs.iter().zip(results.iter_mut()) {
+                    let val1 = creg.get_val().0;
+                    res[val1 as usize] += 1
+                }
+
+                emulator.reset()
             }
-            println!("-------------------")
+
+            println!("creg statistics:");
+            for (i, result) in (0..results.len()).zip(results.iter()) {
+                println!("creg {} stat:", i);
+                let sum = result.iter().sum::<u64>() as f64;
+                for (j, res) in (0..result.len()).zip(result.iter()) {
+                    println!(
+                        "[STATE {:01$b}] freq: {2};\tprob: {3:.5}",
+                        j,
+                        prog.headers.1 as usize,
+                        res,
+                        (*res as f64) / sum
+                    )
+                }
+                println!("-------------------")
+            }
+        } else if let Err(e) = prog {
+            match e {
+                ResolveError::UndefinedLabel(name) => {
+                    eprintln!("Undefined label {}", name);
+                    std::process::exit(1)
+                }
+            }
         }
+    } else if let Err(e) = ast {
+        eprintln!("{:#?}", e);
+        std::process::exit(1)
     }
 }
 
