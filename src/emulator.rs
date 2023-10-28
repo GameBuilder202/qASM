@@ -499,6 +499,7 @@ impl<'a> Emulator<'a> {
         match thing {
             Operand::Imm(imm) => Wrapping(imm),
             Operand::Reg(reg) => self.cregs[reg].get_val(),
+            Operand::Addr(_) => unimplemented!(),
         }
     }
 

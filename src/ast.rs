@@ -273,6 +273,14 @@ impl From<&Inst> for ResolvedInst {
 pub enum Operand {
     Imm(i64),
     Reg(usize),
+    Addr(MemAddr),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemAddr {
+    Address(usize),
+    // (reg, align, offset) = reg * align + offset
+    Indirect(usize, u64, u64),
 }
 
 #[derive(Debug, Clone, Copy)]

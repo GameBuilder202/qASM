@@ -1,22 +1,38 @@
 use std::{fs, io::Read};
 
-use chumsky::Parser as _;
 use clap::{ArgAction, Parser};
+
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label},
+    files::SimpleFile,
+    term::{
+        self,
+        termcolor::{ColorChoice, StandardStream},
+        Config,
+    },
+};
+
+use lalrpop_util::lalrpop_mod;
 
 pub mod ast;
 pub mod emulator;
-pub mod parser;
 
-use ast::ResolveError;
+lalrpop_mod!(grammar);
+
+use ast::*;
 use emulator::Emulator;
 
 fn main() {
     let args = Args::parse();
-    let mut f = fs::File::open(args.input_file).unwrap();
+    let mut f = fs::File::open(&args.input_file).unwrap();
     let mut contents = String::new();
     f.read_to_string(&mut contents).unwrap();
 
-    let ast = parser::parser().parse(contents);
+    let file = SimpleFile::new(args.input_file, &contents);
+    let writer = StandardStream::stderr(ColorChoice::Always);
+    let config = Config::default();
+
+    let ast = grammar::ProgramParser::new().parse(&contents);
 
     if let Ok(prog) = ast {
         if let Ok(prog) = prog {
@@ -68,8 +84,8 @@ fn main() {
             }
         }
     } else if let Err(e) = ast {
-        eprintln!("{:#?}", e);
-        std::process::exit(1)
+        eprintln!("{}", e);
+        std::process::exit(1);
     }
 }
 
@@ -82,7 +98,15 @@ struct Args {
     #[clap(short = 's', long = "shots", default_value_t = 1024)]
     shots: u64,
 
-    /// Print the statevectors of the quantum registers and terminate the program (note: measurement operations are not ignored, use before adding measurements)
+    /// Print the statevectors of the quantum registers and terminate the program
     #[clap(short = 'p', long = "print-state", default_value_t = false, action = ArgAction::SetTrue)]
     print_emu_state: bool,
+}
+
+fn escaped(c: char) -> String {
+    match c {
+        '\n' => String::from("\\n"),
+        '\r' => String::from("\\r"),
+        _ => c.to_string(),
+    }
 }

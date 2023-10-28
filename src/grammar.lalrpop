@@ -1,0 +1,113 @@
+use crate::ast::*;
+
+grammar;
+
+match {
+    "qbits",
+    "cbits",
+    "qregs",
+    "cregs",
+    "q",
+    "qr",
+    "cr",
+    r"-?[0-9]+" => SIGNED_NUM,
+    "[",
+    "]",
+    "+",
+    "*",
+    r"#.*" => {},
+    r"\n+" => NEWLINE,
+    r" +"  => SPACE,
+
+    // Instructions
+    // Quantum instructions
+    "h",
+    "cnot",
+    "ccnot",
+    "x",
+    "y",
+    "z",
+    "rx",
+    "ry",
+    "rz",
+    "u",
+    "s",
+    "t",
+    "sdg",
+    "tdg",
+    "p",
+    "ch",
+    "cy",
+    "cz",
+    "cp",
+    "swap",
+    "sqrtx",
+    "sqrtswp",
+    "cswap",
+    
+    // Classical instructions
+    "add",
+    "sub",
+    "mult",
+    "umult",
+    "div",
+    "smult",
+    "sumult",
+    "sdiv",
+    "not",
+    "and",
+    "or",
+    "xor",
+    "nand",
+    "nor",
+    "xnor",
+
+    // Misc instructions
+    "qsel",
+    "m",
+    "cmp",
+    "jmp",
+    "jeq",
+    "jne",
+    "jg",
+    "jge",
+    "jl",
+    "jle",
+    "hlt",
+} else {
+    r"[0-9]+" => UNSIGNED_NUM
+}
+
+pub Program: Result<Program, ResolveError> = {
+    <h: Headers> <i: Instructions> => resolve_ast(h, i)
+}
+
+Headers: (u16, u16, usize, usize) = {
+    "qbits" SPACE <qbits: Num> NEWLINE
+    "cbits" SPACE <cbits: Num> NEWLINE
+    "qregs" SPACE <qregs: Num> NEWLINE
+    "cregs" SPACE <cregs: Num> NEWLINE
+    => (qbits as u16, cbits as u16, qregs, cregs)
+}
+
+Instructions: Vec<Inst> = {
+    Instruction*
+}
+
+Instruction: Inst = {
+    // Quantum instructions
+    "h" SPACE <Qbit> NEWLINE => Inst::Hadamard(<>)
+}
+
+Num: usize = UNSIGNED_NUM => <>.parse().unwrap();
+Imm: isize = SIGNED_NUM   => <>.parse().unwrap();
+
+Qbit: usize = "q" <Num>;
+Qreg: usize = "qr" <Num>;
+Creg: usize = "cr" <Num>;
+Mem: MemAddr = {
+    "[" <Creg> "]" => MemAddr::Indirect(<>, 1, 0),
+    "[" <Num> "]" => MemAddr::Address(<>),
+    "[" <r: Creg> "+" <o: Num> "]" => MemAddr::Indirect(r, 1, o as u64),
+    "[" <r: Creg> "*" <allign: Num> "+" <o: Num> "]" => MemAddr::Indirect(r, allign as u64, o as u64),
+};
