@@ -99,7 +99,10 @@ Instruction: Inst = {
 }
 
 Num: usize = NUM => <>.parse().unwrap();
-Imm: isize = "-" <NUM>   => -(<>.parse::<isize>().unwrap());
+Imm: isize = { 
+    "-" <NUM> => -(<>.parse::<isize>().unwrap()),
+    <NUM> => <>.parse().unwrap()
+}
 
 Qbit: usize = "q" <Num>;
 Qreg: usize = "qr" <Num>;
