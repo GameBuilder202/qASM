@@ -13,17 +13,19 @@ qbits n
 cbits n
 qregs n
 cregs n
+mem   n
 
 <code>
-
-hlt
 ```
 
 The order of the headers is important and should not be changed. The `qbits` header specifies the number of
 qubits in each quantum register. The `cbits` header specifies the number of classical bits in each classical
 register. The `qregs` header specifies the number of quantum registers. The `cregs` header specifies the number
-of classical registers. The `n` after each header is any non-negative number. Operands/arguments for each
+of classical registers. The `n` after each header is any integer number. Operands/arguments for all
 instructions are delimited by spaces and not commas.
+
+Code execution should always end at a `hlt` instruction. If the emulator reaches the end of code but does not
+encounter a `hlt` instruction, it will end with a "PC out of bounds" error.
 
 ## Quantum Instructions
 The general format for quantum instructions are:
@@ -32,7 +34,7 @@ op qn <other arguments>
 ```
 Where `op` is the name/opcode, `qn` specifies a specific qubit `n` of the currently selected quantum register.
 `<other arguments>` can include more qubits as arguments, or in the case of some instructions, a rotation expressed
-as a rational multiple of pi, in the format `[n]pi[/n]`, where `n` can be any non-negative number, and items
+as a rational multiple of pi, in the format `[n]pi[/n]`, where `n` can be any integer number, and items
 in `[]` are optional. Quantum registers can be selected via the `qsel` instruction, which has the general format
 `qsel qrn` where `n` is any non-negative number.
 
@@ -54,16 +56,18 @@ List of currently implemented quantum instructions:
 | T gate              | t                | `t q0`              | Applies a T gate to qubit 0 |
 | S-dagger            | sdg              | `sdg q0`            | Applies a S-dagger or the inverse of S gate to qubit 0 |
 | T-dagger            | tdg              | `tdg q0`            | Applies a T-dagger or the inverse of T gate to qubit 0 |
-| Phase gate          | p                | `p q0 pi/3`         | Applies a rotation to the $\ket{1}$ state by pi/3 radians |
+| Phase gate          | p                | `p q0 pi/3`         | Applies a relative phase of pi/3 radians to qubit 0 |
 | Controlled Hadamard | ch               | `ch q0 q1`          | Applies a controlled Hadamard to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Y  | cy               | `cy q0 q1`          | Applies a controlled Pauli Y to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Z  | cz               | `cz q0 q1`          | Applies a controlled Pauli Z to qubit 1 with qubit 0 being the control |
 | Controlled Phase    | cp               | `cp q0 q1 pi/2`     | Applies a controlled Phase gate to qubit 1 of pi/2 radians with qubit 0 being the control |
 | Swap                | swap             | `swap q0 q1`        | Swaps the state of qubits 0 and 1 |
-| Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(Pauli X) to qubit 0 |
+| Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(X) to qubit 0 |
 | Square Root Swap    | sqrtswp          | `sqrtswp q0 q1`     | Applies a sqrt(Swap) to qubits 0 and 1, halfway swapping their state |
 | Controlled Swap     | cswap            | `cswap q0 q1 q2`    | Swaps the state of qubits 1 and 2 with qubit 0 being the control |
 | Measure             | m                | `m q0 cr1 c3`       | Measures the state of qubit 0 into 3rd bit of classical register 1 |
+
+*Note: Remove any measurement operations before running the emulator with `--print-state` (or `-p`) as the emulator does not ignore them currently when run with that flag set*
 
 ## Classical Instructions
 General format for classical instructions are:
@@ -99,16 +103,17 @@ List of currently implemented classical instructions:
 | xnor             | op1 = ~(op2 ^ op3). op1 is always a register. |
 
 ## Misc. Instructions
-These instructions are here because I wanted them separate from [Classical Instructions](#classical-instructions)
+These instructions are here because.
 
 | Instruction name | Description |
 | ---------------- | ----------- |
+| qsel             | Selects a quantum register so that proceeding quantum instructions act on that qreg. |
 | cmp              | Updates flags based on comparing values in op1 and op2. op1 is always a register. |
 | jmp              | Unconditionally jump to a label. |
 | jeq              | Jump to label if comparison resulted in EQ flag set. |
 | jne              | Jump to label if comparsion did not result in EQ flag set. |
 | jg               | Jump to label if comparison resulted in GREATER flag set. |
-| jge              | Jump to label if comparison resulted in GREATER or RQ flag set. |
+| jge              | Jump to label if comparison resulted in GREATER or EQ flag set. |
 | jl               | Jump to label if comparison resulted in LESSER flag set. |
 | jle              | Jump to label if comparison resulted in LESSER or EQ flag set. |
 | hlt              | Halt the program. |
