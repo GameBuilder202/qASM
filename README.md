@@ -13,6 +13,7 @@ qbits n
 cbits n
 qregs n
 cregs n
+mem   n
 
 <code>
 ```
@@ -55,13 +56,13 @@ List of currently implemented quantum instructions:
 | T gate              | t                | `t q0`              | Applies a T gate to qubit 0 |
 | S-dagger            | sdg              | `sdg q0`            | Applies a S-dagger or the inverse of S gate to qubit 0 |
 | T-dagger            | tdg              | `tdg q0`            | Applies a T-dagger or the inverse of T gate to qubit 0 |
-| Phase gate          | p                | `p q0 pi/3`         | Applies a rotation to the $\ket{1}$ state by pi/3 radians |
+| Phase gate          | p                | `p q0 pi/3`         | Applies a relative phase of pi/3 radians to qubit 0 |
 | Controlled Hadamard | ch               | `ch q0 q1`          | Applies a controlled Hadamard to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Y  | cy               | `cy q0 q1`          | Applies a controlled Pauli Y to qubit 1 with qubit 0 being the control |
 | Controlled Pauli Z  | cz               | `cz q0 q1`          | Applies a controlled Pauli Z to qubit 1 with qubit 0 being the control |
 | Controlled Phase    | cp               | `cp q0 q1 pi/2`     | Applies a controlled Phase gate to qubit 1 of pi/2 radians with qubit 0 being the control |
 | Swap                | swap             | `swap q0 q1`        | Swaps the state of qubits 0 and 1 |
-| Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(Pauli X) to qubit 0 |
+| Square Root NOT     | sqrtx            | `sqrtx q0 `         | Applies a sqrt(NOT)/sqrt(X) to qubit 0 |
 | Square Root Swap    | sqrtswp          | `sqrtswp q0 q1`     | Applies a sqrt(Swap) to qubits 0 and 1, halfway swapping their state |
 | Controlled Swap     | cswap            | `cswap q0 q1 q2`    | Swaps the state of qubits 1 and 2 with qubit 0 being the control |
 | Measure             | m                | `m q0 cr1 c3`       | Measures the state of qubit 0 into 3rd bit of classical register 1 |

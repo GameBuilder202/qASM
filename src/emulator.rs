@@ -103,6 +103,7 @@ pub struct Emulator<'a> {
     pc: usize,
     qreg_sel: usize,
     flags: BitArr!(for 3, in u8, Lsb0),
+    mem: Vec<Word>,
 
     rng: ThreadRng,
 }
@@ -113,6 +114,7 @@ impl<'a> Emulator<'a> {
         let cbits = prog.headers.1;
         let qregs = prog.headers.2;
         let cregs = prog.headers.3;
+        let mem_size = prog.headers.4;
 
         Self {
             prog,
@@ -138,6 +140,13 @@ impl<'a> Emulator<'a> {
             pc: 0,
             qreg_sel: 0,
             flags: BitArray::ZERO,
+            mem: vec![
+                Word {
+                    bits: cbits,
+                    data: Wrapping(0)
+                };
+                mem_size
+            ],
 
             rng: thread_rng(),
         }
@@ -168,6 +177,13 @@ impl<'a> Emulator<'a> {
             pc: 0,
             qreg_sel: 0,
             flags: BitArray::ZERO,
+            mem: vec![
+                Word {
+                    bits: self.cbits,
+                    data: Wrapping(0)
+                };
+                self.mem.len()
+            ],
 
             rng: thread_rng(),
         }
@@ -343,89 +359,86 @@ impl<'a> Emulator<'a> {
             // Classical Instructions
             ResolvedInst::Mov(r1, val) => {
                 let val = self.get_val(val);
-                self.cregs[r1].set_to(val)
+                self.update(r1, val)
             }
             ResolvedInst::Add(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 + val2)
+                self.update(r1, val1 + val2)
             }
             ResolvedInst::Sub(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 - val2)
+                self.update(r1, val1 - val2)
             }
             ResolvedInst::Mul(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
-                let val = val1.wrapping_mul(val2) as i64;
-                self.cregs[r1].set_to(Wrapping(val))
+                self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64))
             }
             ResolvedInst::UMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
-                let val = val1.wrapping_mul(val2) as i64;
-                self.cregs[r1].set_to(Wrapping(val >> 32))
+                self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64 >> 32))
             }
             ResolvedInst::Div(r1, r2, r3) => {
                 let val1 = self.get_val(r2).0 as u64;
                 let val2 = self.get_val(r3).0 as u64;
-                let val = (val1 / val2) as i64;
-                self.cregs[r1].set_to(Wrapping(val))
+                self.update(r1, Wrapping((val1 / val2) as i64))
             }
             ResolvedInst::SMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 * val2)
+                self.update(r1, val1 * val2)
             }
             ResolvedInst::SUMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to((val1 * val2) >> 32)
+                self.update(r1, (val1 * val2) >> 32)
             }
             ResolvedInst::SDiv(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 / val2)
+                self.update(r1, val1 / val2)
             }
             ResolvedInst::Not(r1, r2) => {
                 let val1 = self.get_val(r2);
-                self.cregs[r1].set_to(!val1)
+                self.update(r1, !val1)
             }
             ResolvedInst::And(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 & val2)
+                self.update(r1, val1 & val2)
             }
             ResolvedInst::Or(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 | val2)
+                self.update(r1, val1 | val2)
             }
             ResolvedInst::Xor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(val1 ^ val2)
+                self.update(r1, val1 ^ val2)
             }
             ResolvedInst::Nand(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(!(val1 & val2))
+                self.update(r1, !(val1 & val2))
             }
             ResolvedInst::Nor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(!(val1 | val2))
+                self.update(r1, !(val1 | val2))
             }
             ResolvedInst::Xnor(r1, r2, r3) => {
                 let val1 = self.get_val(r2);
                 let val2 = self.get_val(r3);
-                self.cregs[r1].set_to(!(val1 ^ val2))
+                self.update(r1, !(val1 ^ val2))
             }
 
             // Misc
             ResolvedInst::Cmp(r1, val) => {
-                let cmp = self.cregs[r1].get_val().cmp(&self.get_val(val));
+                let cmp = self.get_val(r1).cmp(&self.get_val(val));
                 match cmp {
                     Ordering::Less => {
                         self.flags.set(0, true);
@@ -495,11 +508,36 @@ impl<'a> Emulator<'a> {
         &self.cregs
     }
 
+    pub fn get_mem_state(&self) -> &Vec<Word> {
+        &self.mem
+    }
+
     fn get_val(&self, thing: Operand) -> Wrapping<i64> {
         match thing {
             Operand::Imm(imm) => Wrapping(imm),
             Operand::Reg(reg) => self.cregs[reg].get_val(),
-            Operand::Addr(_) => unimplemented!(),
+            Operand::Addr(addr) => self.mem[self.mem_addr_val(addr)].get_val(),
+        }
+    }
+
+    fn mem_addr_val(&self, addr: MemAddr) -> usize {
+        match addr {
+            MemAddr::Address(addr) => addr,
+            MemAddr::Indirect(reg, align, offset) => {
+                (self.cregs[reg].get_val().0 as usize) * align + offset
+            }
+        }
+    }
+
+    fn update(&mut self, src: Operand, dst: Wrapping<i64>) {
+        match src {
+            Operand::Reg(reg) => self.cregs[reg].set_to(dst),
+            Operand::Addr(addr) => {
+                let val = self.mem_addr_val(addr);
+                self.mem[val].set_to(dst)
+            }
+
+            Operand::Imm(_) => unreachable!("Parser allowed bork code"),
         }
     }
 
@@ -606,8 +644,8 @@ impl<'a> Display for Emulator<'a> {
 
 #[derive(Clone, Copy)]
 pub struct Word {
-    pub bits: u16,
-    pub data: Wrapping<i64>,
+    bits: u16,
+    data: Wrapping<i64>,
 }
 
 impl Word {

@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    // (qbits, cbits, qregs, cregs)
-    pub headers: (u16, u16, usize, usize),
+    // (qbits, cbits, qregs, cregs, mem_size)
+    pub headers: (u16, u16, usize, usize, usize),
     pub instructions: Vec<ResolvedInst>,
 }
 
 pub fn resolve_ast(
-    headers: (u16, u16, usize, usize),
+    headers: (u16, u16, usize, usize, usize),
     ast: Vec<Inst>,
 ) -> Result<Program, ResolveError> {
     let mut label_map = HashMap::new();
@@ -118,25 +118,25 @@ pub enum Inst {
     Measure(usize, usize, usize),
 
     // Classical Instructions
-    Mov(usize, Operand),
-    Add(usize, Operand, Operand),
-    Sub(usize, Operand, Operand),
-    Mul(usize, Operand, Operand),
-    UMul(usize, Operand, Operand),
-    Div(usize, Operand, Operand),
-    SMul(usize, Operand, Operand),
-    SUMul(usize, Operand, Operand),
-    SDiv(usize, Operand, Operand),
-    Not(usize, Operand),
-    And(usize, Operand, Operand),
-    Or(usize, Operand, Operand),
-    Xor(usize, Operand, Operand),
-    Nand(usize, Operand, Operand),
-    Nor(usize, Operand, Operand),
-    Xnor(usize, Operand, Operand),
+    Mov(Operand, Operand),
+    Add(Operand, Operand, Operand),
+    Sub(Operand, Operand, Operand),
+    Mul(Operand, Operand, Operand),
+    UMul(Operand, Operand, Operand),
+    Div(Operand, Operand, Operand),
+    SMul(Operand, Operand, Operand),
+    SUMul(Operand, Operand, Operand),
+    SDiv(Operand, Operand, Operand),
+    Not(Operand, Operand),
+    And(Operand, Operand, Operand),
+    Or(Operand, Operand, Operand),
+    Xor(Operand, Operand, Operand),
+    Nand(Operand, Operand, Operand),
+    Nor(Operand, Operand, Operand),
+    Xnor(Operand, Operand, Operand),
 
     // Misc
-    Cmp(usize, Operand),
+    Cmp(Operand, Operand),
     Jmp(String),
     Jeq(String),
     Jne(String),
@@ -180,25 +180,25 @@ pub enum ResolvedInst {
     Measure(usize, usize, usize),
 
     // Classical Instructions
-    Mov(usize, Operand),
-    Add(usize, Operand, Operand),
-    Sub(usize, Operand, Operand),
-    Mul(usize, Operand, Operand),
-    UMul(usize, Operand, Operand),
-    Div(usize, Operand, Operand),
-    SMul(usize, Operand, Operand),
-    SUMul(usize, Operand, Operand),
-    SDiv(usize, Operand, Operand),
-    Not(usize, Operand),
-    And(usize, Operand, Operand),
-    Or(usize, Operand, Operand),
-    Xor(usize, Operand, Operand),
-    Nand(usize, Operand, Operand),
-    Nor(usize, Operand, Operand),
-    Xnor(usize, Operand, Operand),
+    Mov(Operand, Operand),
+    Add(Operand, Operand, Operand),
+    Sub(Operand, Operand, Operand),
+    Mul(Operand, Operand, Operand),
+    UMul(Operand, Operand, Operand),
+    Div(Operand, Operand, Operand),
+    SMul(Operand, Operand, Operand),
+    SUMul(Operand, Operand, Operand),
+    SDiv(Operand, Operand, Operand),
+    Not(Operand, Operand),
+    And(Operand, Operand, Operand),
+    Or(Operand, Operand, Operand),
+    Xor(Operand, Operand, Operand),
+    Nand(Operand, Operand, Operand),
+    Nor(Operand, Operand, Operand),
+    Xnor(Operand, Operand, Operand),
 
     // Misc
-    Cmp(usize, Operand),
+    Cmp(Operand, Operand),
     Jmp(usize),
     Jeq(usize),
     Jne(usize),
@@ -280,7 +280,7 @@ pub enum Operand {
 pub enum MemAddr {
     Address(usize),
     // (reg, align, offset) = reg * align + offset
-    Indirect(usize, u64, u64),
+    Indirect(usize, usize, usize),
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -7,10 +7,16 @@ match {
     "cbits",
     "qregs",
     "cregs",
+    "mem",
     "q",
     "qr",
     "cr",
+    "c",
     r"[0-9]+" => NUM,
+    "[a-zA-Z_][a-zA-Z0-9_]+",
+    ":",
+    "pi",
+    "/",
     "[",
     "]",
     "+",
@@ -47,6 +53,7 @@ match {
     "cswap",
     
     // Classical instructions
+    "mov",
     "add",
     "sub",
     "mult",
@@ -78,35 +85,136 @@ match {
 }
 
 pub Program: Result<Program, ResolveError> = {
-    <h: Headers> NEWLINE <i: Instructions> => resolve_ast(h, i)
+    <h: Headers> <i: Instructions> => resolve_ast(h, i)
 }
 
-Headers: (u16, u16, usize, usize) = {
+Headers: (u16, u16, usize, usize, usize) = {
     "qbits" SPACE <qbits: Num> NEWLINE
     "cbits" SPACE <cbits: Num> NEWLINE
     "qregs" SPACE <qregs: Num> NEWLINE
     "cregs" SPACE <cregs: Num> NEWLINE
-    => (qbits as u16, cbits as u16, qregs, cregs)
+    "mem"   SPACE <mem:   Num> NEWLINE
+    => (qbits as u16, cbits as u16, qregs, cregs, mem)
 }
 
 Instructions: Vec<Inst> = {
-    Instruction*
+    (<Instruction> NEWLINE)*
 }
 
 Instruction: Inst = {
     // Quantum instructions
-    "h" SPACE <Qbit> NEWLINE => Inst::Hadamard(<>)
+    "h" SPACE <Qbit> => Inst::Hadamard(<>),
+    "cnot" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Cnot(q0, q1),
+    "ccnot" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> => Inst::Ccnot(q0, q1, q2),
+    "x" SPACE <Qbit> => Inst::X(<>),
+    "y" SPACE <Qbit> => Inst::Y(<>),
+    "z" SPACE <Qbit> => Inst::Z(<>),
+    "rx" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Rx(q, r),
+    "ry" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Ry(q, r),
+    "rz" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Rz(q, r),
+    "u" SPACE <q:Qbit> SPACE <r0:Rot> SPACE <r1:Rot> SPACE <r2:Rot> => Inst::U(q, r0, r1, r2),
+    "s" SPACE <q:Qbit> => Inst::S(q),
+    "t" SPACE <q:Qbit> => Inst::T(q),
+    "sdg" SPACE <q:Qbit> => Inst::Sdg(q),
+    "tdg" SPACE <q:Qbit> => Inst::Tdg(q),
+    "p" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Phase(q, r),
+    "ch" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Ch(q0, q1),
+    "cy" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Cy(q0, q1),
+    "cz" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Cz(q0, q1),
+    "swap" <q0:Qbit> SPACE <q1:Qbit> => Inst::Swap(q0, q1),
+    "sqrtx" <Qbit> => Inst::SqrtX(<>),
+    "sqrtswp" <q0:Qbit> SPACE <q1:Qbit> => Inst::SqrtSwap(q0, q1),
+    "cswap" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> => Inst::CSwap(q0, q1, q2),
+    "m" <q:Qbit> SPACE <cr:Creg> SPACE <c:Cbit> => Inst::Measure(q, cr, c),
+
+    // Classical instructions
+    "mov" SPACE <r1:SrcOp> SPACE <r2:AnyOp> => Inst::Mov(r1, r2),
+    "add" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Add(
+        r1, r2, r3
+    ),
+    "sub" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Sub(
+        r1, r2, r3
+    ),
+    "mult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Mul(
+        r1, r2, r3
+    ),
+    "umult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::UMul(
+        r1, r2, r3
+    ),
+    "div" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Div(
+        r1, r2, r3
+    ),
+    "smult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::SMul(
+        r1, r2, r3
+    ),
+    "sumult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::SUMul(
+        r1, r2, r3
+    ),
+    "sdiv" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::SDiv(
+        r1, r2, r3
+    ),
+    "not" SPACE <r1:SrcOp> SPACE <r2:AnyOp> => Inst::Not(r1, r2),
+    "and" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::And(
+        r1, r2, r3
+    ),
+    "or" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Or(
+        r1, r2, r3
+    ),
+    "xor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Xor(
+        r1, r2, r3
+    ),
+    "nand" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Nand(
+        r1, r2, r3
+    ),
+    "nor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Nor(
+        r1, r2, r3
+    ),
+    "xnor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Xnor(
+        r1, r2, r3
+    ),
+
+    // Misc instructions
+    "qsel" <Qreg> => Inst::Qsel(<>),
+    "cmp" SPACE <r1:SrcOp> SPACE <r2:AnyOp> => Inst::Cmp(r1, r2),
+    "jmp" SPACE <Label> => Inst::Jmp(<>),
+    "jeq" SPACE <Label> => Inst::Jmp(<>),
+    "jne" SPACE <Label> => Inst::Jmp(<>),
+    "jg" SPACE <Label> => Inst::Jmp(<>),
+    "jge" SPACE <Label> => Inst::Jmp(<>),
+    "jl" SPACE <Label> => Inst::Jmp(<>),
+    "jle" SPACE <Label> => Inst::Jmp(<>),
+    "hlt" => Inst::Hlt,
+
+    <Label> ":" => Inst::Label(<>),
 }
 
 Num: usize = NUM => <>.parse().unwrap();
 Imm: isize = "-"? NUM => ((<>).0.unwrap_or("").to_string() + (<>).1).parse::<isize>().unwrap();
 
+Label: String = "[a-zA-Z_][a-zA-Z0-9_]+" => String::from(<>);
+
 Qbit: usize = "q" <Num>;
 Qreg: usize = "qr" <Num>;
+Rot:  Rotation = <sgn:"-"?> <num:Num?> "pi" <den:("/" <Num>)?> => {
+    let sign = if sgn.is_some() { -1 } else { 1 };
+    let num = if let Some(num) = num { num as i64 } else { 1 };
+    let den = if let Some(den) = den { den as u64 } else { 1 };
+    Rotation(sign * num, den)
+};
 Creg: usize = "cr" <Num>;
+Cbit: usize = "c" <Num>;
 Mem: MemAddr = {
     "[" <Creg> "]" => MemAddr::Indirect(<>, 1, 0),
     "[" <Num> "]" => MemAddr::Address(<>),
-    "[" <r: Creg> "+" <o: Num> "]" => MemAddr::Indirect(r, 1, o as u64),
-    "[" <r: Creg> "*" <allign: Num> "+" <o: Num> "]" => MemAddr::Indirect(r, allign as u64, o as u64),
+    "[" <reg: Creg> "+" <offset: Num> "]" => MemAddr::Indirect(reg, 1, offset),
+    "[" <reg: Creg> "*" <align: Num> "+" <offset: Num> "]" => MemAddr::Indirect(reg, align, offset),
+};
+SrcOp: Operand = {
+    Creg => Operand::Reg(<>),
+    Mem  => Operand::Addr(<>),
+};
+AnyOp: Operand = {
+    Imm  => Operand::Imm(<> as i64),
+    Creg => Operand::Reg(<>),
+    Mem  => Operand::Addr(<>),
 };
