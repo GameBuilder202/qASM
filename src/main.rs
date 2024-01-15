@@ -7,7 +7,7 @@ use clap::{ArgAction, Parser};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
-    files::SimpleFile,
+    files::SimpleFiles,
     term::{
         self,
         termcolor::{ColorChoice, StandardStream},
@@ -15,12 +15,8 @@ use codespan_reporting::{
     },
 };
 
-use lalrpop_util::lalrpop_mod;
-
 pub mod ast;
 pub mod emulator;
-
-lalrpop_mod!(grammar);
 
 use ast::*;
 use emulator::Emulator;
@@ -31,101 +27,124 @@ fn main() {
     let mut contents = String::new();
     f.read_to_string(&mut contents).unwrap();
 
-    let file = SimpleFile::new(args.input_file, &contents);
+    let mut files = SimpleFiles::new();
+    files.add(&args.input_file, &contents);
     let writer = StandardStream::stderr(ColorChoice::Always);
     let config = Config::default();
 
-    let ast = grammar::ProgramParser::new().parse(&contents);
+    let (prog, diags) = ast::parse(&contents, 0);
 
-    if let Ok(prog) = ast {
-        if let Ok(prog) = prog {
-            let mut emulator = Emulator::new(&prog);
-            let mut results = vec![vec![0u64; 1 << prog.headers.1]; prog.headers.3];
+    for diag in &diags {
+        term::emit(&mut writer.lock(), &config, &files, diag).unwrap()
+    }
 
-            if args.print_emu_state {
-                emulator.run().unwrap();
-                println!("{}", emulator);
-                return;
+    if !diags.is_empty() {
+        std::process::exit(1)
+    }
+
+    if let Ok(prog) = prog {
+        let mut emulator = Emulator::new(&prog);
+        let mut results = vec![vec![0u64; 1 << prog.headers.1]; prog.headers.3];
+
+        if args.print_emu_state {
+            let res = emulator.run();
+            if let Err(diag) = res {
+                term::emit(&mut writer.lock(), &config, &files, &diag).unwrap();
+                std::process::exit(3)
             }
 
-            if args.classical {
-                emulator.run().unwrap();
+            println!("{}", emulator);
+            return;
+        }
 
-                println!("Registers data:");
-                print!("Reg:");
-                for i in 0..prog.headers.3 {
-                    print!("\tcr{}", i)
-                }
-                println!();
-                print!("Data:");
-                let data = emulator.get_cregs_state();
-                for reg in data {
-                    print!("\t{:01$b}", reg.get_val().0, prog.headers.1 as usize)
-                }
-                println!();
-
-                let mut mem_file = fs::File::options()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open("mem.bin")
-                    .unwrap();
-
-                let mem = emulator.get_mem_state();
-                for chunk in mem.chunks(16) {
-                    for data in chunk {
-                        write!(
-                            mem_file,
-                            "{:01$b} ",
-                            data.get_val().0,
-                            prog.headers.1 as usize
-                        )
-                        .unwrap()
-                    }
-                    writeln!(mem_file).unwrap()
-                }
-
-                return;
+        if args.classical {
+            let res = emulator.run();
+            if let Err(diag) = res {
+                term::emit(&mut writer.lock(), &config, &files, &diag).unwrap();
+                std::process::exit(3)
             }
 
-            for _ in 0..args.shots {
-                emulator.run().unwrap();
+            println!("Registers data:");
+            print!("Reg:");
+            for i in 0..prog.headers.3 {
+                print!("\tcr{}", i)
+            }
+            println!();
+            print!("Data:");
+            let data = emulator.get_cregs_state();
+            for reg in data {
+                print!("\t{:01$b}", reg.get_val().0, prog.headers.1)
+            }
+            println!();
 
-                let cregs = emulator.get_cregs_state();
-                for (creg, res) in cregs.iter().zip(results.iter_mut()) {
-                    let val1 = creg.get_val().0;
-                    res[val1 as usize] += 1
+            let mut mem_file = fs::File::options()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("mem.bin")
+                .unwrap();
+
+            let mem = emulator.get_mem_state();
+            for chunk in mem.chunks(16) {
+                for data in chunk {
+                    write!(mem_file, "{:01$b} ", data.get_val().0, prog.headers.1).unwrap()
                 }
-
-                emulator.reset()
+                writeln!(mem_file).unwrap()
             }
 
-            println!("creg statistics:");
-            for (i, result) in results.iter().enumerate() {
-                println!("creg {} stat:", i);
-                let sum = result.iter().sum::<u64>() as f64;
-                for (j, res) in result.iter().enumerate() {
-                    println!(
-                        "[STATE {:01$b}] freq: {2};\tprob: {3:.5}",
-                        j,
-                        prog.headers.1 as usize,
-                        res,
-                        (*res as f64) / sum
-                    )
-                }
-                println!("-------------------")
+            return;
+        }
+
+        for _ in 0..args.shots {
+            let res = emulator.run();
+            if let Err(diag) = res {
+                term::emit(&mut writer.lock(), &config, &files, &diag).unwrap();
+                std::process::exit(3)
             }
-        } else if let Err(e) = prog {
-            match e {
-                ResolveError::UndefinedLabel(name) => {
-                    eprintln!("Undefined label {}", name);
-                    std::process::exit(1)
-                }
+
+            let cregs = emulator.get_cregs_state();
+            for (creg, res) in cregs.iter().zip(results.iter_mut()) {
+                let val1 = creg.get_val().0;
+                res[val1 as usize] += 1
+            }
+
+            emulator.reset()
+        }
+
+        println!("creg statistics:");
+        for (i, result) in results.iter().enumerate() {
+            println!("creg {} stat:", i);
+            let sum = result.iter().sum::<u64>() as f64;
+            for (j, res) in result.iter().enumerate() {
+                println!(
+                    "[STATE {:01$b}] freq: {2};\tprob: {3:.5}",
+                    j,
+                    prog.headers.1,
+                    res,
+                    (*res as f64) / sum
+                )
+            }
+            println!("-------------------")
+        }
+    } else if let Err(e) = prog {
+        let diag = Diagnostic::error();
+        match e {
+            ResolveError::UndefinedLabel(name, s) => term::emit(
+                &mut writer.lock(),
+                &config,
+                &files,
+                &diag
+                    .with_message(format!("Reference to undefined label \"{}\"", name))
+                    .with_labels(vec![Label::primary(s.file, s.span)]),
+            )
+            .unwrap(),
+
+            ResolveError::ParseError(diag) => {
+                term::emit(&mut writer.lock(), &config, &files, &diag).unwrap()
             }
         }
-    } else if let Err(e) = ast {
-        eprintln!("{}", e);
-        std::process::exit(1);
+
+        std::process::exit(2)
     }
 }
 

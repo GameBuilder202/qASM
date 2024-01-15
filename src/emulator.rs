@@ -5,6 +5,7 @@ use std::f64::consts::{
 use std::fmt::Display;
 use std::num::Wrapping;
 
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 use lazy_static::lazy_static;
 
 use num_traits::{One, Zero};
@@ -94,13 +95,14 @@ fn r1(theta: f64) -> DCf64Mat {
 pub struct Emulator<'a> {
     prog: &'a Program,
 
-    qbits: u16,
-    cbits: u16,
+    qbits: usize,
+    cbits: usize,
 
     qregs: Vec<DVector<Complexf64>>,
     cregs: Vec<Word>,
 
     pc: usize,
+    prev_pc: usize,
     qreg_sel: usize,
     flags: BitArr!(for 3, in u8, Lsb0),
     mem: Vec<Word>,
@@ -138,6 +140,7 @@ impl<'a> Emulator<'a> {
             ],
 
             pc: 0,
+            prev_pc: 0,
             qreg_sel: 0,
             flags: BitArray::ZERO,
             mem: vec![
@@ -175,6 +178,7 @@ impl<'a> Emulator<'a> {
             ],
 
             pc: 0,
+            prev_pc: 0,
             qreg_sel: 0,
             flags: BitArray::ZERO,
             mem: vec![
@@ -189,36 +193,87 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), EmulatorError> {
+    pub fn run(&mut self) -> Result<(), Diagnostic<usize>> {
         loop {
             let res = self.step()?;
+
+            self.prev_pc = self.pc;
             if res == StepResult::Halted {
                 break;
-            }
-
-            if res == StepResult::Continue {
-                self.pc += 1
+            } else if res == StepResult::Continue {
+                self.pc += 1;
+            } else if let StepResult::Branch(new_pc) = res {
+                self.pc = new_pc
             }
         }
         Ok(())
     }
 
-    fn step(&mut self) -> Result<StepResult, EmulatorError> {
+    fn step(&mut self) -> Result<StepResult, Diagnostic<usize>> {
         let Some(inst) = self.prog.instructions.get(self.pc) else {
-            return Err(EmulatorError::PCOutOfBounds)
+            // Wtf why do i have to do this dumb .get().unwrap() thing
+            let inst = self.prog.instructions.get(self.prev_pc).unwrap();
+            let span: &SourceSpan = inst.get_span();
+            return Err(
+                    Diagnostic::error()
+                        .with_message("PC went out of bounds")
+                        .with_labels(vec![Label::primary(span.file, span.span.clone())])
+                        .with_notes(vec![
+                            format!("Note: Current PC value is {} (changed from value {})", self.pc, self.prev_pc),
+                            String::from("Maybe you are missing a 'hlt' instruction")
+                        ])
+                    )
         };
 
-        match *inst {
+        match inst {
             // Quantum Instructions
-            ResolvedInst::Qsel(qreg) => {
-                if qreg > self.qregs.len() {
-                    return Err(EmulatorError::QregIndexOutOfBounds);
+            ResolvedInst::Qsel(qreg, s) => {
+                if qreg > &self.qregs.len() {
+                    return Err(Diagnostic::error()
+                        .with_message("qreg index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qregs is {} as declared in headers",
+                            self.qregs.len()
+                        )]));
                 }
-                self.qreg_sel = qreg
+                self.qreg_sel = *qreg
             }
-            ResolvedInst::Id(qbit) => self.apply_mat_1(&MAT_2_IDENTITY, qbit),
-            ResolvedInst::Hadamard(qbit) => self.apply_mat_1(&HADAMARD_MAT, qbit),
-            ResolvedInst::Cnot(qbit1, qbit2) => {
+            ResolvedInst::Id(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&MAT_2_IDENTITY, *qbit)
+            }
+            ResolvedInst::Hadamard(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&HADAMARD_MAT, *qbit)
+            }
+            ResolvedInst::Cnot(qbit1, qbit2, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -231,7 +286,17 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit2_mask)
                 }
             }
-            ResolvedInst::Ccnot(qbit1, qbit2, qbit3) => {
+            ResolvedInst::Ccnot(qbit1, qbit2, qbit3, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits || qbit3 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -246,34 +311,212 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit3_mask)
                 }
             }
-            ResolvedInst::X(qbit) => self.apply_mat_1(&PAULI_X_MAT, qbit),
-            ResolvedInst::Y(qbit) => self.apply_mat_1(&PAULI_Y_MAT, qbit),
-            ResolvedInst::Z(qbit) => self.apply_mat_1(&PAULI_Z_MAT, qbit),
-            ResolvedInst::Rx(qbit, rot) => self.apply_mat_1(&rx(rot.get_angle()), qbit),
-            ResolvedInst::Ry(qbit, rot) => self.apply_mat_1(&ry(rot.get_angle()), qbit),
-            ResolvedInst::Rz(qbit, rot) => self.apply_mat_1(&rz(rot.get_angle()), qbit),
-            ResolvedInst::U(qbit, theta, phi, lambda) => self.apply_mat_1(
-                &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
-                qbit,
-            ),
-            ResolvedInst::S(qbit) => self.apply_mat_1(&S_MAT, qbit),
-            ResolvedInst::T(qbit) => self.apply_mat_1(&T_MAT, qbit),
-            ResolvedInst::Sdg(qbit) => self.apply_mat_1(&S_DG_MAT, qbit),
-            ResolvedInst::Tdg(qbit) => self.apply_mat_1(&T_DG_MAT, qbit),
-            ResolvedInst::Phase(qbit, rot) => self.apply_mat_1(&r1(rot.get_angle()), qbit),
-            ResolvedInst::Ch(qbit1, qbit2) => {
-                self.apply_controlled_mat(&HADAMARD_MAT, vec![qbit1], qbit2)
+            ResolvedInst::X(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&PAULI_X_MAT, *qbit)
             }
-            ResolvedInst::Cy(qbit1, qbit2) => {
-                self.apply_controlled_mat(&PAULI_Y_MAT, vec![qbit1], qbit2)
+            ResolvedInst::Y(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&PAULI_Y_MAT, *qbit)
             }
-            ResolvedInst::Cz(qbit1, qbit2) => {
-                self.apply_controlled_mat(&PAULI_Z_MAT, vec![qbit1], qbit2)
+            ResolvedInst::Z(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&PAULI_Z_MAT, *qbit)
             }
-            ResolvedInst::CPhase(qbit1, qbit2, rot) => {
-                self.apply_controlled_mat(&r1(rot.get_angle()), vec![qbit1], qbit2)
+            ResolvedInst::Rx(qbit, rot, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&rx(rot.get_angle()), *qbit)
             }
-            ResolvedInst::Swap(qbit1, qbit2) => {
+            ResolvedInst::Ry(qbit, rot, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&ry(rot.get_angle()), *qbit)
+            }
+            ResolvedInst::Rz(qbit, rot, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&rz(rot.get_angle()), *qbit)
+            }
+            ResolvedInst::U(qbit, theta, phi, lambda, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(
+                    &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
+                    *qbit,
+                )
+            }
+            ResolvedInst::S(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&S_MAT, *qbit)
+            }
+            ResolvedInst::T(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&T_MAT, *qbit)
+            }
+            ResolvedInst::Sdg(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&S_DG_MAT, *qbit)
+            }
+            ResolvedInst::Tdg(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&T_DG_MAT, *qbit)
+            }
+            ResolvedInst::Phase(qbit, rot, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&r1(rot.get_angle()), *qbit)
+            }
+            ResolvedInst::Ch(qbit1, qbit2, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_controlled_mat(&HADAMARD_MAT, vec![*qbit1], *qbit2)
+            }
+            ResolvedInst::Cy(qbit1, qbit2, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_controlled_mat(&PAULI_Y_MAT, vec![*qbit1], *qbit2)
+            }
+            ResolvedInst::Cz(qbit1, qbit2, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_controlled_mat(&PAULI_Z_MAT, vec![*qbit1], *qbit2)
+            }
+            ResolvedInst::CPhase(qbit1, qbit2, rot, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_controlled_mat(&r1(rot.get_angle()), vec![*qbit1], *qbit2)
+            }
+            ResolvedInst::Swap(qbit1, qbit2, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -286,9 +529,41 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state | qbit1_mask, state | qbit2_mask)
                 }
             }
-            ResolvedInst::SqrtX(qbit) => self.apply_mat_1(&SQRT_X_MAT, qbit),
-            ResolvedInst::SqrtSwap(qbit1, qbit2) => self.apply_mat_2(&SQRT_SWAP_MAT, qbit1, qbit2),
-            ResolvedInst::CSwap(qbit1, qbit2, qbit3) => {
+            ResolvedInst::SqrtX(qbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_1(&SQRT_X_MAT, *qbit)
+            }
+            ResolvedInst::SqrtSwap(qbit1, qbit2, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                self.apply_mat_2(&SQRT_SWAP_MAT, *qbit1, *qbit2)
+            }
+            ResolvedInst::CSwap(qbit1, qbit2, qbit3, s) => {
+                if qbit1 > &self.qbits || qbit2 > &self.qbits || qbit3 > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+
                 let qreg = &mut self.qregs[self.qreg_sel];
 
                 let qbit1_mask = 1 << qbit1;
@@ -304,7 +579,33 @@ impl<'a> Emulator<'a> {
                 }
             }
 
-            ResolvedInst::Measure(qbit, creg, cbit) => {
+            ResolvedInst::Measure(qbit, creg, cbit, s) => {
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                } else if creg > &self.cregs.len() {
+                    return Err(Diagnostic::error()
+                        .with_message("creg index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of cregs is {} as declared in headers",
+                            self.cregs.len()
+                        )]));
+                } else if cbit > &self.cbits {
+                    return Err(Diagnostic::error()
+                        .with_message("cbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of cbits is {} as declared in headers",
+                            self.cbits
+                        )]));
+                }
+
                 let qreg = &mut self.qregs[self.qreg_sel];
                 let qbit_mask = 1 << qbit;
 
@@ -324,7 +625,7 @@ impl<'a> Emulator<'a> {
                 }
                 let prob = prob.re;
                 if prob == 0f64 || prob == 1f64 {
-                    self.cregs[creg].set_bit(cbit, prob == 0f64);
+                    self.cregs[*creg].set_bit(*cbit, prob == 0f64);
                     return Ok(StepResult::Continue);
                 }
                 let rand = self.rng.gen::<f64>();
@@ -336,7 +637,7 @@ impl<'a> Emulator<'a> {
                         }
                         qreg[state] = Complex::zero()
                     }
-                    self.cregs[creg].set_bit(cbit, false)
+                    self.cregs[*creg].set_bit(*cbit, false)
                 } else {
                     for state in 0..(1 << self.qbits) {
                         if state & qbit_mask != 0 {
@@ -344,7 +645,7 @@ impl<'a> Emulator<'a> {
                         }
                         qreg[state] = Complex::zero()
                     }
-                    self.cregs[creg].set_bit(cbit, true)
+                    self.cregs[*creg].set_bit(*cbit, true)
                 }
 
                 let sqrtsumsq = {
@@ -357,88 +658,88 @@ impl<'a> Emulator<'a> {
             }
 
             // Classical Instructions
-            ResolvedInst::Mov(r1, val) => {
-                let val = self.get_val(val);
-                self.update(r1, val)
+            ResolvedInst::Mov(r1, val, s) => {
+                let val = self.get_val(*val, s)?;
+                self.update(*r1, val, s)?
             }
-            ResolvedInst::Add(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 + val2)
+            ResolvedInst::Add(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 + val2, s)?
             }
-            ResolvedInst::Sub(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 - val2)
+            ResolvedInst::Sub(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 - val2, s)?
             }
-            ResolvedInst::Mul(r1, r2, r3) => {
-                let val1 = self.get_val(r2).0 as u64;
-                let val2 = self.get_val(r3).0 as u64;
-                self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64))
+            ResolvedInst::Mul(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?.0 as u64;
+                let val2 = self.get_val(*r3, s)?.0 as u64;
+                self.update(*r1, Wrapping(val1.wrapping_mul(val2) as i64), s)?
             }
-            ResolvedInst::UMul(r1, r2, r3) => {
-                let val1 = self.get_val(r2).0 as u64;
-                let val2 = self.get_val(r3).0 as u64;
-                self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64 >> 32))
+            ResolvedInst::UMul(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?.0 as u64;
+                let val2 = self.get_val(*r3, s)?.0 as u64;
+                self.update(*r1, Wrapping(val1.wrapping_mul(val2) as i64 >> 32), s)?
             }
-            ResolvedInst::Div(r1, r2, r3) => {
-                let val1 = self.get_val(r2).0 as u64;
-                let val2 = self.get_val(r3).0 as u64;
-                self.update(r1, Wrapping((val1 / val2) as i64))
+            ResolvedInst::Div(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?.0 as u64;
+                let val2 = self.get_val(*r3, s)?.0 as u64;
+                self.update(*r1, Wrapping((val1 / val2) as i64), s)?
             }
-            ResolvedInst::SMul(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 * val2)
+            ResolvedInst::SMul(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 * val2, s)?
             }
-            ResolvedInst::SUMul(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, (val1 * val2) >> 32)
+            ResolvedInst::SUMul(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, (val1 * val2) >> 32, s)?
             }
-            ResolvedInst::SDiv(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 / val2)
+            ResolvedInst::SDiv(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 / val2, s)?
             }
-            ResolvedInst::Not(r1, r2) => {
-                let val1 = self.get_val(r2);
-                self.update(r1, !val1)
+            ResolvedInst::Not(r1, r2, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                self.update(*r1, !val1, s)?
             }
-            ResolvedInst::And(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 & val2)
+            ResolvedInst::And(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 & val2, s)?
             }
-            ResolvedInst::Or(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 | val2)
+            ResolvedInst::Or(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 | val2, s)?
             }
-            ResolvedInst::Xor(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, val1 ^ val2)
+            ResolvedInst::Xor(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, val1 ^ val2, s)?
             }
-            ResolvedInst::Nand(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, !(val1 & val2))
+            ResolvedInst::Nand(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, !(val1 & val2), s)?
             }
-            ResolvedInst::Nor(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, !(val1 | val2))
+            ResolvedInst::Nor(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, !(val1 | val2), s)?
             }
-            ResolvedInst::Xnor(r1, r2, r3) => {
-                let val1 = self.get_val(r2);
-                let val2 = self.get_val(r3);
-                self.update(r1, !(val1 ^ val2))
+            ResolvedInst::Xnor(r1, r2, r3, s) => {
+                let val1 = self.get_val(*r2, s)?;
+                let val2 = self.get_val(*r3, s)?;
+                self.update(*r1, !(val1 ^ val2), s)?
             }
 
             // Misc
-            ResolvedInst::Cmp(r1, val) => {
-                let cmp = self.get_val(r1).cmp(&self.get_val(val));
+            ResolvedInst::Cmp(r1, val, s) => {
+                let cmp = self.get_val(*r1, s)?.cmp(&self.get_val(*val, s)?);
                 match cmp {
                     Ordering::Less => {
                         self.flags.set(0, true);
@@ -457,44 +758,37 @@ impl<'a> Emulator<'a> {
                     }
                 }
             }
-            ResolvedInst::Jmp(offset) => {
-                self.pc = offset;
-                return Ok(StepResult::Branched);
+            ResolvedInst::Jmp(offset, _) => {
+                return Ok(StepResult::Branch(*offset));
             }
-            ResolvedInst::Jeq(offset) => {
+            ResolvedInst::Jeq(offset, _) => {
                 if self.flags[1] {
-                    self.pc = offset;
-                    return Ok(StepResult::Branched);
+                    return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jne(offset) => {
+            ResolvedInst::Jne(offset, _) => {
                 if !self.flags[1] {
-                    self.pc = offset;
-                    return Ok(StepResult::Branched);
+                    return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jg(offset) => {
+            ResolvedInst::Jg(offset, _) => {
                 if self.flags[2] {
-                    self.pc = offset;
-                    return Ok(StepResult::Branched);
+                    return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jge(offset) => {
+            ResolvedInst::Jge(offset, _) => {
                 if self.flags[1] || self.flags[2] {
-                    self.pc = offset;
-                    return Ok(StepResult::Branched);
+                    return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jl(offset) => {
+            ResolvedInst::Jl(offset, _) => {
                 if self.flags[0] {
-                    self.pc = offset;
-                    return Ok(StepResult::Branched);
+                    return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jle(offset) => {
+            ResolvedInst::Jle(offset, _) => {
                 if self.flags[0] || self.flags[1] {
-                    self.pc = offset;
-                    return Ok(StepResult::Branched);
+                    return Ok(StepResult::Branch(*offset));
                 }
             }
 
@@ -512,29 +806,105 @@ impl<'a> Emulator<'a> {
         &self.mem
     }
 
-    fn get_val(&self, thing: Operand) -> Wrapping<i64> {
+    fn get_val(
+        &self,
+        thing: Operand,
+        span: &SourceSpan,
+    ) -> Result<Wrapping<i64>, Diagnostic<usize>> {
         match thing {
-            Operand::Imm(imm) => Wrapping(imm),
-            Operand::Reg(reg) => self.cregs[reg].get_val(),
-            Operand::Addr(addr) => self.mem[self.mem_addr_val(addr)].get_val(),
-        }
-    }
-
-    fn mem_addr_val(&self, addr: MemAddr) -> usize {
-        match addr {
-            MemAddr::Address(addr) => addr,
-            MemAddr::Indirect(reg, align, offset) => {
-                (self.cregs[reg].get_val().0 as usize) * align + offset
+            Operand::Imm(imm) => Ok(Wrapping(imm)),
+            Operand::Reg(reg) => {
+                if reg > self.cregs.len() {
+                    Err(Diagnostic::error()
+                        .with_message("creg index out of bounds")
+                        .with_labels(vec![Label::primary(span.file, span.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of cregs is {} as declared in headers",
+                            self.cregs.len()
+                        )]))
+                } else {
+                    Ok(self.cregs[reg].get_val())
+                }
+            }
+            Operand::Addr(addr) => {
+                let addr_val = self.mem_addr_val(addr, span)?;
+                if addr_val > self.mem.len() {
+                    Err(Diagnostic::error()
+                        .with_message("Memory index out of bounds")
+                        .with_labels(vec![Label::primary(span.file, span.span.clone())
+                            .with_message(format!(
+                                "Attempted to access memory index {}",
+                                addr_val
+                            ))])
+                        .with_notes(vec![format!(
+                            "Note: Number of words in memory is {} as declared in headers",
+                            self.mem.len()
+                        )]))
+                } else {
+                    Ok(self.mem[addr_val].get_val())
+                }
             }
         }
     }
 
-    fn update(&mut self, src: Operand, dst: Wrapping<i64>) {
+    fn mem_addr_val(&self, addr: MemAddr, span: &SourceSpan) -> Result<usize, Diagnostic<usize>> {
+        match addr {
+            MemAddr::Address(addr) => Ok(addr),
+            MemAddr::Indirect(reg, align, offset) => {
+                if reg > self.cregs.len() {
+                    Err(Diagnostic::error()
+                        .with_message("creg index out of bounds")
+                        .with_labels(vec![Label::primary(span.file, span.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of cregs is {} as declared in headers",
+                            self.cregs.len()
+                        )]))
+                } else {
+                    Ok((self.cregs[reg].get_val().0 as usize) * align + offset)
+                }
+            }
+        }
+    }
+
+    fn update(
+        &mut self,
+        src: Operand,
+        dst: Wrapping<i64>,
+        span: &SourceSpan,
+    ) -> Result<(), Diagnostic<usize>> {
         match src {
-            Operand::Reg(reg) => self.cregs[reg].set_to(dst),
+            Operand::Reg(reg) => {
+                if reg > self.cregs.len() {
+                    Err(Diagnostic::error()
+                        .with_message("creg index out of bounds")
+                        .with_labels(vec![Label::primary(span.file, span.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of cregs is {} as declared in headers",
+                            self.cregs.len()
+                        )]))
+                } else {
+                    self.cregs[reg].set_to(dst);
+                    Ok(())
+                }
+            }
             Operand::Addr(addr) => {
-                let val = self.mem_addr_val(addr);
-                self.mem[val].set_to(dst)
+                let addr_val = self.mem_addr_val(addr, span)?;
+                if addr_val > self.mem.len() {
+                    Err(Diagnostic::error()
+                        .with_message("Memory index out of bounds")
+                        .with_labels(vec![Label::primary(span.file, span.span.clone())
+                            .with_message(format!(
+                                "Attempted to access memory index {}",
+                                addr_val
+                            ))])
+                        .with_notes(vec![format!(
+                            "Note: Number of words in memory is {} as declared in headers",
+                            self.mem.len()
+                        )]))
+                } else {
+                    self.mem[addr_val].set_to(dst);
+                    Ok(())
+                }
             }
 
             Operand::Imm(_) => unreachable!("Parser allowed bork code"),
@@ -644,7 +1014,7 @@ impl<'a> Display for Emulator<'a> {
 
 #[derive(Clone, Copy)]
 pub struct Word {
-    bits: u16,
+    bits: usize,
     data: Wrapping<i64>,
 }
 
@@ -680,11 +1050,5 @@ impl Display for Word {
 enum StepResult {
     Halted,
     Continue,
-    Branched,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum EmulatorError {
-    PCOutOfBounds,
-    QregIndexOutOfBounds,
+    Branch(usize),
 }

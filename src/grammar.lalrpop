@@ -1,6 +1,8 @@
 use crate::ast::*;
 
-grammar;
+use lalrpop_util::ParseError;
+
+grammar<'err>(file: usize, errors: &'err mut Vec<ParseError<usize, Token<'input>, &'static str>>);
 
 match {
     "qbits",
@@ -88,13 +90,13 @@ pub Program: Result<Program, ResolveError> = {
     <h: Headers> <i: Instructions> => resolve_ast(h, i)
 }
 
-Headers: (u16, u16, usize, usize, usize) = {
+Headers: (usize, usize, usize, usize, usize) = {
     "qbits" SPACE <qbits: Num> NEWLINE
     "cbits" SPACE <cbits: Num> NEWLINE
     "qregs" SPACE <qregs: Num> NEWLINE
     "cregs" SPACE <cregs: Num> NEWLINE
     "mem"   SPACE <mem:   Num> NEWLINE
-    => (qbits as u16, cbits as u16, qregs, cregs, mem)
+    => (qbits, cbits, qregs, cregs, mem)
 }
 
 Instructions: Vec<Inst> = {
@@ -103,89 +105,108 @@ Instructions: Vec<Inst> = {
 
 Instruction: Inst = {
     // Quantum instructions
-    "h" SPACE <Qbit> => Inst::Hadamard(<>),
-    "cnot" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Cnot(q0, q1),
-    "ccnot" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> => Inst::Ccnot(q0, q1, q2),
-    "x" SPACE <Qbit> => Inst::X(<>),
-    "y" SPACE <Qbit> => Inst::Y(<>),
-    "z" SPACE <Qbit> => Inst::Z(<>),
-    "rx" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Rx(q, r),
-    "ry" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Ry(q, r),
-    "rz" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Rz(q, r),
-    "u" SPACE <q:Qbit> SPACE <r0:Rot> SPACE <r1:Rot> SPACE <r2:Rot> => Inst::U(q, r0, r1, r2),
-    "s" SPACE <q:Qbit> => Inst::S(q),
-    "t" SPACE <q:Qbit> => Inst::T(q),
-    "sdg" SPACE <q:Qbit> => Inst::Sdg(q),
-    "tdg" SPACE <q:Qbit> => Inst::Tdg(q),
-    "p" SPACE <q:Qbit> SPACE <r:Rot> => Inst::Phase(q, r),
-    "ch" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Ch(q0, q1),
-    "cy" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Cy(q0, q1),
-    "cz" SPACE <q0:Qbit> SPACE <q1:Qbit> => Inst::Cz(q0, q1),
-    "swap" <q0:Qbit> SPACE <q1:Qbit> => Inst::Swap(q0, q1),
-    "sqrtx" <Qbit> => Inst::SqrtX(<>),
-    "sqrtswp" <q0:Qbit> SPACE <q1:Qbit> => Inst::SqrtSwap(q0, q1),
-    "cswap" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> => Inst::CSwap(q0, q1, q2),
-    "m" <q:Qbit> SPACE <cr:Creg> SPACE <c:Cbit> => Inst::Measure(q, cr, c),
+    <l: @L> "h" SPACE <q:Qbit> <r: @R> => Inst::Hadamard(q, SourceSpan::new(file, l..r)),
+    <l: @L> "cnot" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Cnot(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "ccnot" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> <r: @R> => Inst::Ccnot(q0, q1, q2, SourceSpan::new(file, l..r)),
+    <l: @L> "x" SPACE <q:Qbit> <r: @R> => Inst::X(q, SourceSpan::new(file, l..r)),
+    <l: @L> "y" SPACE <q:Qbit> <r: @R> => Inst::Y(q, SourceSpan::new(file, l..r)),
+    <l: @L> "z" SPACE <q:Qbit> <r: @R> => Inst::Z(q, SourceSpan::new(file, l..r)),
+    <l: @L> "rx" SPACE <q:Qbit> SPACE <rot:Rot> <r: @R> => Inst::Rx(q, rot, SourceSpan::new(file, l..r)),
+    <l: @L> "ry" SPACE <q:Qbit> SPACE <rot:Rot> <r: @R> => Inst::Ry(q, rot, SourceSpan::new(file, l..r)),
+    <l: @L> "rz" SPACE <q:Qbit> SPACE <rot:Rot> <r: @R> => Inst::Rz(q, rot, SourceSpan::new(file, l..r)),
+    <l: @L> "u" SPACE <q:Qbit> SPACE <r0:Rot> SPACE <r1:Rot> SPACE <r2:Rot> <r: @R> => Inst::U(q, r0, r1, r2, SourceSpan::new(file, l..r)),
+    <l: @L> "s" SPACE <q:Qbit> <r: @R> => Inst::S(q, SourceSpan::new(file, l..r)),
+    <l: @L> "t" SPACE <q:Qbit> <r: @R> => Inst::T(q, SourceSpan::new(file, l..r)),
+    <l: @L> "sdg" SPACE <q:Qbit> <r: @R> => Inst::Sdg(q, SourceSpan::new(file, l..r)),
+    <l: @L> "tdg" SPACE <q:Qbit> <r: @R> => Inst::Tdg(q, SourceSpan::new(file, l..r)),
+    <l: @L> "p" SPACE <q:Qbit> SPACE <rot:Rot> <r: @R> => Inst::Phase(q, rot, SourceSpan::new(file, l..r)),
+    <l: @L> "ch" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Ch(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "cy" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Cy(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "cz" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Cz(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "swap" <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Swap(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "sqrtx" <q:Qbit> <r: @R> => Inst::SqrtX(q, SourceSpan::new(file, l..r)),
+    <l: @L> "sqrtswp" <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::SqrtSwap(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "cswap" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> <r: @R> => Inst::CSwap(q0, q1, q2, SourceSpan::new(file, l..r)),
+    <l: @L> "m" SPACE <q:Qbit> SPACE <cr:Creg> SPACE <c:Cbit> <r: @R> => Inst::Measure(q, cr, c, SourceSpan::new(file, l..r)),
 
     // Classical instructions
-    "mov" SPACE <r1:SrcOp> SPACE <r2:AnyOp> => Inst::Mov(r1, r2),
-    "add" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Add(
-        r1, r2, r3
+    <l: @L> "mov" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R> => Inst::Mov(r1, r2, SourceSpan::new(file, l..r)),
+    <l: @L> "add" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Add(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "sub" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Sub(
-        r1, r2, r3
+    <l: @L> "sub" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Sub(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "mult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Mul(
-        r1, r2, r3
+    <l: @L> "mult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Mul(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "umult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::UMul(
-        r1, r2, r3
+    <l: @L> "umult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::UMul(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "div" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Div(
-        r1, r2, r3
+    <l: @L> "div" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Div(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "smult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::SMul(
-        r1, r2, r3
+    <l: @L> "smult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::SMul(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "sumult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::SUMul(
-        r1, r2, r3
+    <l: @L> "sumult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::SUMul(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "sdiv" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::SDiv(
-        r1, r2, r3
+    <l: @L> "sdiv" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::SDiv(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "not" SPACE <r1:SrcOp> SPACE <r2:AnyOp> => Inst::Not(r1, r2),
-    "and" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::And(
-        r1, r2, r3
+    <l: @L> "not" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R> => Inst::Not(r1, r2, SourceSpan::new(file, l..r)),
+    <l: @L> "and" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::And(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "or" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Or(
-        r1, r2, r3
+    <l: @L> "or" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Or(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "xor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Xor(
-        r1, r2, r3
+    <l: @L> "xor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Xor(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "nand" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Nand(
-        r1, r2, r3
+    <l: @L> "nand" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Nand(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "nor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Nor(
-        r1, r2, r3
+    <l: @L> "nor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Nor(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
-    "xnor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> => Inst::Xnor(
-        r1, r2, r3
+    <l: @L> "xnor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => Inst::Xnor(
+        r1, r2, r3,
+        SourceSpan::new(file, l..r),
     ),
 
     // Misc instructions
-    "qsel" <Qreg> => Inst::Qsel(<>),
-    "cmp" SPACE <r1:SrcOp> SPACE <r2:AnyOp> => Inst::Cmp(r1, r2),
-    "jmp" SPACE <Label> => Inst::Jmp(<>),
-    "jeq" SPACE <Label> => Inst::Jmp(<>),
-    "jne" SPACE <Label> => Inst::Jmp(<>),
-    "jg" SPACE <Label> => Inst::Jmp(<>),
-    "jge" SPACE <Label> => Inst::Jmp(<>),
-    "jl" SPACE <Label> => Inst::Jmp(<>),
-    "jle" SPACE <Label> => Inst::Jmp(<>),
+    <l: @L> "qsel" SPACE <qr:Qreg> <r: @R> => Inst::Qsel(qr, SourceSpan::new(file, l..r)),
+    <l: @L> "cmp" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R> => Inst::Cmp(r1, r2, SourceSpan::new(file, l..r)),
+    <l: @L> "jmp" SPACE <lbl:Label> <r: @R> => Inst::Jmp(lbl, SourceSpan::new(file, l..r)),
+    <l: @L> "jeq" SPACE <lbl:Label> <r: @R> => Inst::Jeq(lbl, SourceSpan::new(file, l..r)),
+    <l: @L> "jne" SPACE <lbl:Label> <r: @R> => Inst::Jne(lbl, SourceSpan::new(file, l..r)),
+    <l: @L> "jg" SPACE <lbl:Label> <r: @R> => Inst::Jg(lbl, SourceSpan::new(file, l..r)),
+    <l: @L> "jge" SPACE <lbl:Label> <r: @R> => Inst::Jge(lbl, SourceSpan::new(file, l..r)),
+    <l: @L> "jl" SPACE <lbl:Label> <r: @R> => Inst::Jl(lbl, SourceSpan::new(file, l..r)),
+    <l: @L> "jle" SPACE <lbl:Label> <r: @R> => Inst::Jle(lbl, SourceSpan::new(file, l..r)),
     "hlt" => Inst::Hlt,
 
     <Label> ":" => Inst::Label(<>),
+
+    ! => {
+        errors.push(<>.error);
+        Inst::Err
+    }
 }
 
 Num: usize = NUM => <>.parse().unwrap();
@@ -204,10 +225,10 @@ Rot:  Rotation = <sgn:"-"?> <num:Num?> "pi" <den:("/" <Num>)?> => {
 Creg: usize = "cr" <Num>;
 Cbit: usize = "c" <Num>;
 Mem: MemAddr = {
-    "[" <Creg> "]" => MemAddr::Indirect(<>, 1, 0),
-    "[" <Num> "]" => MemAddr::Address(<>),
-    "[" <reg: Creg> "+" <offset: Num> "]" => MemAddr::Indirect(reg, 1, offset),
-    "[" <reg: Creg> "*" <align: Num> "+" <offset: Num> "]" => MemAddr::Indirect(reg, align, offset),
+    "[" SPACE? <Creg> SPACE? "]" => MemAddr::Indirect(<>, 1, 0),
+    "[" SPACE? <Num> SPACE? "]" => MemAddr::Address(<>),
+    "[" SPACE? <reg: Creg> SPACE? "+" SPACE? <offset: Num> SPACE? "]" => MemAddr::Indirect(reg, 1, offset),
+    "[" SPACE? <reg: Creg> SPACE? "*" SPACE? <align: Num> SPACE? "+" SPACE? <offset: Num> SPACE? "]" => MemAddr::Indirect(reg, align, offset),
 };
 SrcOp: Operand = {
     Creg => Operand::Reg(<>),
