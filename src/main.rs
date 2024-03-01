@@ -142,6 +142,20 @@ fn main() {
             ResolveError::ParseError(diag) => {
                 term::emit(&mut writer.lock(), &config, &files, &diag).unwrap()
             }
+
+            ResolveError::UndefinedGate(name, s) => term::emit(
+                &mut writer.lock(),
+                &config,
+                &files,
+                &diag
+                    .with_message(format!("Usage of undefined gate \"{}\"", name))
+                    .with_labels(vec![Label::primary(s.file, s.span)]),
+            )
+            .unwrap(),
+
+            ResolveError::CustomGateError(diag) => {
+                term::emit(&mut writer.lock(), &config, &files, &diag).unwrap()
+            }
         }
 
         std::process::exit(2)

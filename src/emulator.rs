@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::f64::consts::{
     FRAC_1_SQRT_2 as ONE_BY_ROOT_2, FRAC_PI_2 as PI_BY_2, FRAC_PI_4 as PI_BY_4,
 };
@@ -200,7 +201,8 @@ impl<'a> Emulator<'a> {
             self.prev_pc = self.pc;
             if res == StepResult::Halted {
                 break;
-            } else if res == StepResult::Continue {
+            }
+            if res == StepResult::Continue {
                 self.pc += 1;
             } else if let StepResult::Branch(new_pc) = res {
                 self.pc = new_pc
@@ -211,20 +213,29 @@ impl<'a> Emulator<'a> {
 
     fn step(&mut self) -> Result<StepResult, Diagnostic<usize>> {
         let Some(inst) = self.prog.instructions.get(self.pc) else {
-            // Wtf why do i have to do this dumb .get().unwrap() thing
-            let inst = self.prog.instructions.get(self.prev_pc).unwrap();
+            let inst = &self.prog.instructions[self.prev_pc];
             let span: &SourceSpan = inst.get_span();
-            return Err(
-                    Diagnostic::error()
-                        .with_message("PC went out of bounds")
-                        .with_labels(vec![Label::primary(span.file, span.span.clone())])
-                        .with_notes(vec![
-                            format!("Note: Current PC value is {} (changed from value {})", self.pc, self.prev_pc),
-                            String::from("Maybe you are missing a 'hlt' instruction")
-                        ])
-                    )
+            return Err(Diagnostic::error()
+                .with_message("PC went out of bounds")
+                .with_labels(vec![Label::primary(span.file, span.span.clone())])
+                .with_notes(vec![
+                    format!(
+                        "Note: Current PC value is {} (changed from value {})",
+                        self.pc, self.prev_pc
+                    ),
+                    String::from("Maybe you are missing a 'hlt' instruction?"),
+                ]));
         };
 
+        self.run_instr(inst, &(0..self.qbits).collect::<Vec<_>>(), &HashMap::new())
+    }
+
+    fn run_instr(
+        &mut self,
+        inst: &ResolvedInst,
+        mapping: &[usize],
+        args: &HashMap<String, IdentVal>,
+    ) -> Result<StepResult, Diagnostic<usize>> {
         match inst {
             // Quantum Instructions
             ResolvedInst::Qsel(qreg, s) => {
@@ -240,6 +251,15 @@ impl<'a> Emulator<'a> {
                 self.qreg_sel = *qreg
             }
             ResolvedInst::Id(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -252,6 +272,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&MAT_2_IDENTITY, *qbit)
             }
             ResolvedInst::Hadamard(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -264,6 +293,24 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&HADAMARD_MAT, *qbit)
             }
             ResolvedInst::Cnot(qbit1, qbit2, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -287,6 +334,33 @@ impl<'a> Emulator<'a> {
                 }
             }
             ResolvedInst::Ccnot(qbit1, qbit2, qbit3, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit3) = mapping.get(*qbit3) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit3))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits || qbit3 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -312,6 +386,15 @@ impl<'a> Emulator<'a> {
                 }
             }
             ResolvedInst::X(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -324,6 +407,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&PAULI_X_MAT, *qbit)
             }
             ResolvedInst::Y(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -336,6 +428,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&PAULI_Y_MAT, *qbit)
             }
             ResolvedInst::Z(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -348,6 +449,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&PAULI_Z_MAT, *qbit)
             }
             ResolvedInst::Rx(qbit, rot, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -357,9 +467,23 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
+                let Some(rot) = rot.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
                 self.apply_mat_1(&rx(rot.get_angle()), *qbit)
             }
             ResolvedInst::Ry(qbit, rot, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -369,9 +493,23 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
+                let Some(rot) = rot.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
                 self.apply_mat_1(&ry(rot.get_angle()), *qbit)
             }
             ResolvedInst::Rz(qbit, rot, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -381,9 +519,23 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
+                let Some(rot) = rot.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
                 self.apply_mat_1(&rz(rot.get_angle()), *qbit)
             }
             ResolvedInst::U(qbit, theta, phi, lambda, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -393,12 +545,36 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
+                let Some(theta) = theta.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
+                let Some(phi) = phi.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
+                let Some(lambda) = lambda.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
                 self.apply_mat_1(
                     &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
                     *qbit,
                 )
             }
             ResolvedInst::S(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -411,6 +587,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&S_MAT, *qbit)
             }
             ResolvedInst::T(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -423,6 +608,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&T_MAT, *qbit)
             }
             ResolvedInst::Sdg(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -435,6 +629,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&S_DG_MAT, *qbit)
             }
             ResolvedInst::Tdg(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -447,6 +650,15 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&T_DG_MAT, *qbit)
             }
             ResolvedInst::Phase(qbit, rot, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -456,9 +668,32 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
+                let Some(rot) = rot.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
                 self.apply_mat_1(&r1(rot.get_angle()), *qbit)
             }
             ResolvedInst::Ch(qbit1, qbit2, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -471,6 +706,24 @@ impl<'a> Emulator<'a> {
                 self.apply_controlled_mat(&HADAMARD_MAT, vec![*qbit1], *qbit2)
             }
             ResolvedInst::Cy(qbit1, qbit2, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -483,6 +736,24 @@ impl<'a> Emulator<'a> {
                 self.apply_controlled_mat(&PAULI_Y_MAT, vec![*qbit1], *qbit2)
             }
             ResolvedInst::Cz(qbit1, qbit2, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -495,6 +766,24 @@ impl<'a> Emulator<'a> {
                 self.apply_controlled_mat(&PAULI_Z_MAT, vec![*qbit1], *qbit2)
             }
             ResolvedInst::CPhase(qbit1, qbit2, rot, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -504,9 +793,32 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
+                let Some(rot) = rot.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
                 self.apply_controlled_mat(&r1(rot.get_angle()), vec![*qbit1], *qbit2)
             }
             ResolvedInst::Swap(qbit1, qbit2, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -530,6 +842,15 @@ impl<'a> Emulator<'a> {
                 }
             }
             ResolvedInst::SqrtX(qbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -542,6 +863,24 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_1(&SQRT_X_MAT, *qbit)
             }
             ResolvedInst::SqrtSwap(qbit1, qbit2, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -554,6 +893,33 @@ impl<'a> Emulator<'a> {
                 self.apply_mat_2(&SQRT_SWAP_MAT, *qbit1, *qbit2)
             }
             ResolvedInst::CSwap(qbit1, qbit2, qbit3, s) => {
+                let Some(qbit1) = mapping.get(*qbit1) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit1))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit2) = mapping.get(*qbit2) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit2))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                let Some(qbit3) = mapping.get(*qbit3) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit3))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit1 > &self.qbits || qbit2 > &self.qbits || qbit3 > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -580,6 +946,15 @@ impl<'a> Emulator<'a> {
             }
 
             ResolvedInst::Measure(qbit, creg, cbit, s) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
                 if qbit > &self.qbits {
                     return Err(Diagnostic::error()
                         .with_message("qbit index out of bounds")
@@ -588,7 +963,8 @@ impl<'a> Emulator<'a> {
                             "Note: Number of qbits is {} as declared in headers",
                             self.qbits
                         )]));
-                } else if creg > &self.cregs.len() {
+                }
+                if creg > &self.cregs.len() {
                     return Err(Diagnostic::error()
                         .with_message("creg index out of bounds")
                         .with_labels(vec![Label::primary(s.file, s.span.clone())])
@@ -596,7 +972,8 @@ impl<'a> Emulator<'a> {
                             "Note: Number of cregs is {} as declared in headers",
                             self.cregs.len()
                         )]));
-                } else if cbit > &self.cbits {
+                }
+                if cbit > &self.cbits {
                     return Err(Diagnostic::error()
                         .with_message("cbit index out of bounds")
                         .with_labels(vec![Label::primary(s.file, s.span.clone())])
@@ -657,89 +1034,115 @@ impl<'a> Emulator<'a> {
                 }
             }
 
+            // Custom gate stuff
+            ResolvedInst::Custom(name, qbits, args, s) => {
+                let gate = &self.prog.custom_gates[name];
+                let args_ = gate
+                    .1
+                    .iter()
+                    .zip(args)
+                    .map(|x| (x.0 .0.clone(), x.1))
+                    .collect::<Vec<_>>();
+                let mut args = HashMap::new();
+                for arg in args_ {
+                    args.insert(arg.0, arg.1.clone());
+                }
+
+                for inst in &gate.2 {
+                    let res = self.run_instr(inst, qbits, &args);
+                    if let Err(diag) = res {
+                        return Err(diag.with_labels(vec![Label::secondary(
+                            s.file,
+                            s.span.clone(),
+                        )
+                        .with_message("Originating from this custom gate call")]));
+                    }
+                }
+            }
+
             // Classical Instructions
             ResolvedInst::Mov(r1, val, s) => {
-                let val = self.get_val(*val, s)?;
-                self.update(*r1, val, s)?
+                let val = self.get_val(val, args, s)?;
+                self.update(r1, val, args, s)?
             }
             ResolvedInst::Add(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 + val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 + val2, args, s)?
             }
             ResolvedInst::Sub(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 - val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 - val2, args, s)?
             }
             ResolvedInst::Mul(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?.0 as u64;
-                let val2 = self.get_val(*r3, s)?.0 as u64;
-                self.update(*r1, Wrapping(val1.wrapping_mul(val2) as i64), s)?
+                let val1 = self.get_val(r2, args, s)?.0 as u64;
+                let val2 = self.get_val(r3, args, s)?.0 as u64;
+                self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64), args, s)?
             }
             ResolvedInst::UMul(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?.0 as u64;
-                let val2 = self.get_val(*r3, s)?.0 as u64;
-                self.update(*r1, Wrapping(val1.wrapping_mul(val2) as i64 >> 32), s)?
+                let val1 = self.get_val(r2, args, s)?.0 as u64;
+                let val2 = self.get_val(r3, args, s)?.0 as u64;
+                self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64 >> 32), args, s)?
             }
             ResolvedInst::Div(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?.0 as u64;
-                let val2 = self.get_val(*r3, s)?.0 as u64;
-                self.update(*r1, Wrapping((val1 / val2) as i64), s)?
+                let val1 = self.get_val(r2, args, s)?.0 as u64;
+                let val2 = self.get_val(r3, args, s)?.0 as u64;
+                self.update(r1, Wrapping((val1 / val2) as i64), args, s)?
             }
             ResolvedInst::SMul(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 * val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 * val2, args, s)?
             }
             ResolvedInst::SUMul(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, (val1 * val2) >> 32, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, (val1 * val2) >> 32, args, s)?
             }
             ResolvedInst::SDiv(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 / val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 / val2, args, s)?
             }
             ResolvedInst::Not(r1, r2, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                self.update(*r1, !val1, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                self.update(r1, !val1, args, s)?
             }
             ResolvedInst::And(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 & val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 & val2, args, s)?
             }
             ResolvedInst::Or(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 | val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 | val2, args, s)?
             }
             ResolvedInst::Xor(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, val1 ^ val2, s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, val1 ^ val2, args, s)?
             }
             ResolvedInst::Nand(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, !(val1 & val2), s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, !(val1 & val2), args, s)?
             }
             ResolvedInst::Nor(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, !(val1 | val2), s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, !(val1 | val2), args, s)?
             }
             ResolvedInst::Xnor(r1, r2, r3, s) => {
-                let val1 = self.get_val(*r2, s)?;
-                let val2 = self.get_val(*r3, s)?;
-                self.update(*r1, !(val1 ^ val2), s)?
+                let val1 = self.get_val(r2, args, s)?;
+                let val2 = self.get_val(r3, args, s)?;
+                self.update(r1, !(val1 ^ val2), args, s)?
             }
 
             // Misc
             ResolvedInst::Cmp(r1, val, s) => {
-                let cmp = self.get_val(*r1, s)?.cmp(&self.get_val(*val, s)?);
+                let cmp = self.get_val(r1, args, s)?.cmp(&self.get_val(val, args, s)?);
                 match cmp {
                     Ordering::Less => {
                         self.flags.set(0, true);
@@ -806,15 +1209,31 @@ impl<'a> Emulator<'a> {
         &self.mem
     }
 
+    fn get_arg(
+        &self,
+        name: &String,
+        args: &HashMap<String, IdentVal>,
+        span: &SourceSpan,
+    ) -> Result<Operand, Diagnostic<usize>> {
+        if let Some(val) = args.get(name) {
+            Ok(val.into())
+        } else {
+            Err(Diagnostic::error()
+                .with_message(format!("'{}' does not exist in current scope", name))
+                .with_labels(vec![Label::primary(span.file, span.span.clone())]))
+        }
+    }
+
     fn get_val(
         &self,
-        thing: Operand,
+        thing: &Operand,
+        args: &HashMap<String, IdentVal>,
         span: &SourceSpan,
     ) -> Result<Wrapping<i64>, Diagnostic<usize>> {
         match thing {
-            Operand::Imm(imm) => Ok(Wrapping(imm)),
+            Operand::Imm(imm) => Ok(Wrapping(*imm)),
             Operand::Reg(reg) => {
-                if reg > self.cregs.len() {
+                if reg > &self.cregs.len() {
                     Err(Diagnostic::error()
                         .with_message("creg index out of bounds")
                         .with_labels(vec![Label::primary(span.file, span.span.clone())])
@@ -823,11 +1242,11 @@ impl<'a> Emulator<'a> {
                             self.cregs.len()
                         )]))
                 } else {
-                    Ok(self.cregs[reg].get_val())
+                    Ok(self.cregs[*reg].get_val())
                 }
             }
             Operand::Addr(addr) => {
-                let addr_val = self.mem_addr_val(addr, span)?;
+                let addr_val = self.mem_addr_val(*addr, span)?;
                 if addr_val > self.mem.len() {
                     Err(Diagnostic::error()
                         .with_message("Memory index out of bounds")
@@ -844,6 +1263,7 @@ impl<'a> Emulator<'a> {
                     Ok(self.mem[addr_val].get_val())
                 }
             }
+            Operand::Ident(name) => self.get_val(&self.get_arg(name, args, span)?, args, span),
         }
     }
 
@@ -868,13 +1288,14 @@ impl<'a> Emulator<'a> {
 
     fn update(
         &mut self,
-        src: Operand,
+        src: &Operand,
         dst: Wrapping<i64>,
+        args: &HashMap<String, IdentVal>,
         span: &SourceSpan,
     ) -> Result<(), Diagnostic<usize>> {
         match src {
             Operand::Reg(reg) => {
-                if reg > self.cregs.len() {
+                if reg > &self.cregs.len() {
                     Err(Diagnostic::error()
                         .with_message("creg index out of bounds")
                         .with_labels(vec![Label::primary(span.file, span.span.clone())])
@@ -883,12 +1304,12 @@ impl<'a> Emulator<'a> {
                             self.cregs.len()
                         )]))
                 } else {
-                    self.cregs[reg].set_to(dst);
+                    self.cregs[*reg].set_to(dst);
                     Ok(())
                 }
             }
             Operand::Addr(addr) => {
-                let addr_val = self.mem_addr_val(addr, span)?;
+                let addr_val = self.mem_addr_val(*addr, span)?;
                 if addr_val > self.mem.len() {
                     Err(Diagnostic::error()
                         .with_message("Memory index out of bounds")
@@ -906,6 +1327,7 @@ impl<'a> Emulator<'a> {
                     Ok(())
                 }
             }
+            Operand::Ident(name) => self.update(&self.get_arg(name, args, span)?, dst, args, span),
 
             Operand::Imm(_) => unreachable!("Parser allowed bork code"),
         }

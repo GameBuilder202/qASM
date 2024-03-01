@@ -10,19 +10,29 @@ match {
     "qregs",
     "cregs",
     "mem",
-    "q",
-    "qr",
-    "cr",
-    "c",
+    r"q[0-9]+"  => QBIT,
+    r"qr[0-9]+" => QREG,
+    r"cr[0-9]+" => CREG,
+    r"c[0-9]+"  => CBIT,
+    "gate",
+    "Rot",
+    "Imm",
+    "Reg",
+    "Addr",
     r"[0-9]+" => NUM,
-    "[a-zA-Z_][a-zA-Z0-9_]+",
     ":",
     "pi",
     "/",
     "[",
     "]",
+    "(",
+    ")",
+    "{",
+    "}",
     "+",
     "*",
+    "=",
+    ";",
     r"#.*" => {},
     r"\n+" => NEWLINE,
     r" +"  => SPACE,
@@ -84,6 +94,8 @@ match {
     "jl",
     "jle",
     "hlt",
+} else {
+    r"[a-zA-Z_][a-zA-Z0-9_]*" => IDENT,
 }
 
 pub Program: Result<Program, ResolveError> = {
@@ -100,7 +112,7 @@ Headers: (usize, usize, usize, usize, usize) = {
 }
 
 Instructions: Vec<Inst> = {
-    (<Instruction> NEWLINE)*
+    (SPACE? <Instruction> NEWLINE)*
 }
 
 Instruction: Inst = {
@@ -128,6 +140,42 @@ Instruction: Inst = {
     <l: @L> "sqrtswp" <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::SqrtSwap(q0, q1, SourceSpan::new(file, l..r)),
     <l: @L> "cswap" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <q2:Qbit> <r: @R> => Inst::CSwap(q0, q1, q2, SourceSpan::new(file, l..r)),
     <l: @L> "m" SPACE <q:Qbit> SPACE <cr:Creg> SPACE <c:Cbit> <r: @R> => Inst::Measure(q, cr, c, SourceSpan::new(file, l..r)),
+
+    // Custom gates stuff
+    "gate" SPACE <name:Ident> SPACE? "(" SPACE? "qbits" SPACE? "=" SPACE? <qbits:Num> SPACE? ")" SPACE?
+    <args:("(" SPACE? <Ident> SPACE? ":" SPACE? <IdentType> SPACE? ")" SPACE?)*>
+    "{" NEWLINE <body:Instructions> "}" => Inst::CustomGateDef(name, qbits, args, body),
+
+    <l: @L> <name:Ident> SPACE <mut qbits:(<Qbit> SPACE)*> <e1:Qbit?> <args:(";" SPACE <(<CGateArg> SPACE)*> <CGateArg?>)?> <r:@R> => {
+        let mut other_args;
+        let e2;
+        if let Some(args) = args {
+            other_args = args.0;
+            e2 = args.1;
+        } else {
+            other_args = Vec::new();
+            e2 = None;
+        }
+
+        Inst::Custom(
+            name,
+            match e1 {
+                None => qbits,
+                Some(e) => {
+                    qbits.push(e);
+                    qbits
+                }
+            },
+            match e2 {
+                None => other_args,
+                Some(e) => {
+                    other_args.push(e);
+                    other_args
+                }
+            },
+            SourceSpan::new(file, l..r),
+        )
+    },
 
     // Classical instructions
     <l: @L> "mov" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R> => Inst::Mov(r1, r2, SourceSpan::new(file, l..r)),
@@ -212,18 +260,20 @@ Instruction: Inst = {
 Num: usize = NUM => <>.parse().unwrap();
 Imm: isize = "-"? NUM => ((<>).0.unwrap_or("").to_string() + (<>).1).parse::<isize>().unwrap();
 
-Label: String = "[a-zA-Z_][a-zA-Z0-9_]+" => String::from(<>);
+Label: String = IDENT => String::from(<>);
+Ident: String = IDENT => String::from(<>);
 
-Qbit: usize = "q" <Num>;
-Qreg: usize = "qr" <Num>;
-Rot:  Rotation = <sgn:"-"?> <num:Num?> "pi" <den:("/" <Num>)?> => {
+Qbit: usize = QBIT => <>[1..].parse().unwrap();
+Qreg: usize = QREG => <>[2..].parse().unwrap();
+_Rot: Rot = <sgn:"-"?> <num:Num?> "pi" <den:("/" <Num>)?> => {
     let sign = if sgn.is_some() { -1 } else { 1 };
     let num = if let Some(num) = num { num as i64 } else { 1 };
     let den = if let Some(den) = den { den as u64 } else { 1 };
-    Rotation(sign * num, den)
+    Rot(sign * num, den)
 };
-Creg: usize = "cr" <Num>;
-Cbit: usize = "c" <Num>;
+Rot: Rotation = _Rot => Rotation::Rot(<>);
+Creg: usize = CREG => <>[2..].parse().unwrap();
+Cbit: usize = CBIT => <>[1..].parse().unwrap();
 Mem: MemAddr = {
     "[" SPACE? <Creg> SPACE? "]" => MemAddr::Indirect(<>, 1, 0),
     "[" SPACE? <Num> SPACE? "]" => MemAddr::Address(<>),
@@ -231,11 +281,30 @@ Mem: MemAddr = {
     "[" SPACE? <reg: Creg> SPACE? "*" SPACE? <align: Num> SPACE? "+" SPACE? <offset: Num> SPACE? "]" => MemAddr::Indirect(reg, align, offset),
 };
 SrcOp: Operand = {
-    Creg => Operand::Reg(<>),
-    Mem  => Operand::Addr(<>),
+    Creg  => Operand::Reg(<>),
+    Mem   => Operand::Addr(<>),
+
+    Ident => Operand::Ident(<>),
 };
 AnyOp: Operand = {
-    Imm  => Operand::Imm(<> as i64),
-    Creg => Operand::Reg(<>),
-    Mem  => Operand::Addr(<>),
+    Imm   => Operand::Imm(<> as i64),
+    Creg  => Operand::Reg(<>),
+    Mem   => Operand::Addr(<>),
+
+    Ident => Operand::Ident(<>),
+};
+
+CGateArg:  IdentVal = {
+    _Rot    => IdentVal::Rot(<>),
+
+    Imm     => IdentVal::Imm(<> as i64),
+    Creg    => IdentVal::Reg(<>),
+    Mem     => IdentVal::Addr(<>)
+};
+IdentType: IdentType = {
+    "Rot"  => IdentType::Rot,
+
+    "Imm"  => IdentType::Imm,
+    "Reg"  => IdentType::Reg,
+    "Addr" => IdentType::MemAddr,
 };
