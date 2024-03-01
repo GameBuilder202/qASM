@@ -135,6 +135,7 @@ Instruction: Inst = {
     <l: @L> "ch" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Ch(q0, q1, SourceSpan::new(file, l..r)),
     <l: @L> "cy" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Cy(q0, q1, SourceSpan::new(file, l..r)),
     <l: @L> "cz" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Cz(q0, q1, SourceSpan::new(file, l..r)),
+    <l: @L> "cp" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <rot:Rot> <r:@R> => Inst::CPhase(q0, q1, rot, SourceSpan::new(file, l..r)),
     <l: @L> "swap" <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::Swap(q0, q1, SourceSpan::new(file, l..r)),
     <l: @L> "sqrtx" <q:Qbit> <r: @R> => Inst::SqrtX(q, SourceSpan::new(file, l..r)),
     <l: @L> "sqrtswp" <q0:Qbit> SPACE <q1:Qbit> <r: @R> => Inst::SqrtSwap(q0, q1, SourceSpan::new(file, l..r)),

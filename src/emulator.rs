@@ -997,7 +997,11 @@ impl<'a> Emulator<'a> {
                     prob += amplitude * amplitude
                 }
 
-                if prob.im != 0f64 {
+                if matches!(
+                    (prob.im - 0f64).abs().partial_cmp(&f64::EPSILON),
+                    None | Some(Ordering::Greater)
+                ) {
+                    println!("{}", prob);
                     panic!("Invalid probability for qubit {}", qbit)
                 }
                 let prob = prob.re;
