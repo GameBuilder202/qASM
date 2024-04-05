@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 
 use num_traits::{One, Zero};
 
-use nalgebra::{dmatrix, DMatrix};
+use nalgebra::{matrix, SMatrix};
 use nalgebra::{Complex, ComplexField};
 use nalgebra::{DVector, Vector2, Vector4};
 
@@ -23,38 +23,39 @@ use rand::{rngs::ThreadRng, thread_rng};
 use crate::ast::*;
 
 type Complexf64 = Complex<f64>;
-type DCf64Mat = DMatrix<Complexf64>;
+type DCf64Mat2 = SMatrix<Complexf64, 2, 2>;
+type DCf64Mat4 = SMatrix<Complexf64, 4, 4>;
 
 lazy_static! {
-    static ref MAT_2_IDENTITY: DCf64Mat = dmatrix![
+    static ref MAT_2_IDENTITY: DCf64Mat2 = matrix![
         Complex::one(), Complex::zero();
         Complex::zero(), Complex::one();
     ];
-    static ref HADAMARD_MAT: DCf64Mat = dmatrix![
+    static ref HADAMARD_MAT: DCf64Mat2 = matrix![
         Complex::from(ONE_BY_ROOT_2), Complex::from(ONE_BY_ROOT_2);
         Complex::from(ONE_BY_ROOT_2), Complex::from(-ONE_BY_ROOT_2);
     ];
-    static ref PAULI_X_MAT: DCf64Mat = dmatrix![
+    static ref PAULI_X_MAT: DCf64Mat2 = matrix![
         Complex::zero(), Complex::one();
         Complex::one(), Complex::zero();
     ];
-    static ref PAULI_Y_MAT: DCf64Mat = dmatrix![
+    static ref PAULI_Y_MAT: DCf64Mat2 = matrix![
         Complex::zero(), -Complex::i();
         Complex::i(), Complex::zero();
     ];
-    static ref PAULI_Z_MAT: DCf64Mat = dmatrix![
+    static ref PAULI_Z_MAT: DCf64Mat2 = matrix![
         Complex::one(), Complex::zero();
         Complex::zero(), -Complex::one();
     ];
-    static ref S_MAT: DCf64Mat = r1(PI_BY_2);
-    static ref T_MAT: DCf64Mat = r1(PI_BY_4);
-    static ref S_DG_MAT: DCf64Mat = S_MAT.adjoint();
-    static ref T_DG_MAT: DCf64Mat = T_MAT.adjoint();
-    static ref SQRT_X_MAT: DCf64Mat = dmatrix![
+    static ref S_MAT: DCf64Mat2 = r1(PI_BY_2);
+    static ref T_MAT: DCf64Mat2 = r1(PI_BY_4);
+    static ref S_DG_MAT: DCf64Mat2 = S_MAT.adjoint();
+    static ref T_DG_MAT: DCf64Mat2 = T_MAT.adjoint();
+    static ref SQRT_X_MAT: DCf64Mat2 = matrix![
         Complex::new(0.5, 0.5), Complex::new(0.5, -0.5);
         Complex::new(0.5, -0.5), Complex::new(0.5, 0.5);
     ];
-    static ref SQRT_SWAP_MAT: DCf64Mat = dmatrix![
+    static ref SQRT_SWAP_MAT: DCf64Mat4 = matrix![
         Complex::one(), Complex::zero(), Complex::zero(), Complex::zero();
         Complex::zero(), Complex::new(0.5, 0.5), Complex::new(0.5, -0.5), Complex::zero();
         Complex::zero(), Complex::new(0.5, -0.5), Complex::new(0.5, 0.5), Complex::zero();
@@ -63,33 +64,33 @@ lazy_static! {
 }
 
 #[inline]
-fn u(theta: f64, phi: f64, lambda: f64) -> DCf64Mat {
+fn u(theta: f64, phi: f64, lambda: f64) -> DCf64Mat2 {
     let half_theta = theta / 2f64;
-    dmatrix![
+    matrix![
         Complex::from(half_theta.cos()), -half_theta.sin() * Complex::new(lambda.cos(), lambda.sin());
         half_theta.sin() * Complex::new(phi.cos(), phi.sin()), half_theta.cos() * Complex::new((lambda + phi).cos(), (lambda + phi).sin());
     ]
 }
 #[inline]
-fn rx(theta: f64) -> DCf64Mat {
+fn rx(theta: f64) -> DCf64Mat2 {
     u(theta, -PI_BY_2, PI_BY_2)
 }
 #[inline]
-fn ry(theta: f64) -> DCf64Mat {
+fn ry(theta: f64) -> DCf64Mat2 {
     u(theta, 0f64, 0f64)
 }
 #[inline]
-fn rz(theta: f64) -> DCf64Mat {
+fn rz(theta: f64) -> DCf64Mat2 {
     let half_theta = theta / 2f64;
     // If only i could do this
     // Complex::new(half_theta.cos(), -half_theta.sin()) * r1(theta)
-    dmatrix![
+    matrix![
         Complex::new(half_theta.cos(), -half_theta.sin()), Complex::zero();
         Complex::zero(), Complex::new(half_theta.cos(), half_theta.sin());
     ]
 }
 #[inline]
-fn r1(theta: f64) -> DCf64Mat {
+fn r1(theta: f64) -> DCf64Mat2 {
     u(0f64, theta, 0f64)
 }
 
@@ -212,9 +213,8 @@ impl<'a> Emulator<'a> {
     }
 
     fn step(&mut self) -> Result<StepResult, Diagnostic<usize>> {
-        let Some(inst) = self.prog.instructions.get(self.pc) else {
-            let inst = &self.prog.instructions[self.prev_pc];
-            let span: &SourceSpan = inst.get_span();
+        let Some((inst, span)) = self.prog.instructions.get(self.pc) else {
+            let (_, span) = &self.prog.instructions[self.prev_pc];
             return Err(Diagnostic::error()
                 .with_message("PC went out of bounds")
                 .with_labels(vec![Label::primary(span.file, span.span.clone())])
@@ -227,18 +227,24 @@ impl<'a> Emulator<'a> {
                 ]));
         };
 
-        self.run_instr(inst, &(0..self.qbits).collect::<Vec<_>>(), &HashMap::new())
+        self.run_instr(
+            inst,
+            span,
+            &(0..self.qbits).collect::<Vec<_>>(),
+            &HashMap::new(),
+        )
     }
 
     fn run_instr(
         &mut self,
         inst: &ResolvedInst,
+        s: &SourceSpan,
         mapping: &[usize],
         args: &HashMap<String, IdentVal>,
     ) -> Result<StepResult, Diagnostic<usize>> {
         match inst {
             // Quantum Instructions
-            ResolvedInst::Qsel(qreg, s) => {
+            ResolvedInst::Qsel(qreg) => {
                 if qreg > &self.qregs.len() {
                     return Err(Diagnostic::error()
                         .with_message("qreg index out of bounds")
@@ -250,7 +256,7 @@ impl<'a> Emulator<'a> {
                 }
                 self.qreg_sel = *qreg
             }
-            ResolvedInst::Id(qbit, s) => {
+            ResolvedInst::Id(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -269,9 +275,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&MAT_2_IDENTITY, *qbit)
+                self.apply_mat_2(&MAT_2_IDENTITY, *qbit)
             }
-            ResolvedInst::Hadamard(qbit, s) => {
+            ResolvedInst::Hadamard(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -290,9 +296,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&HADAMARD_MAT, *qbit)
+                self.apply_mat_2(&HADAMARD_MAT, *qbit)
             }
-            ResolvedInst::Cnot(qbit1, qbit2, s) => {
+            ResolvedInst::Cnot(qbit1, qbit2) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -333,7 +339,7 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit2_mask)
                 }
             }
-            ResolvedInst::Ccnot(qbit1, qbit2, qbit3, s) => {
+            ResolvedInst::Ccnot(qbit1, qbit2, qbit3) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -385,7 +391,7 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state, state | qbit3_mask)
                 }
             }
-            ResolvedInst::X(qbit, s) => {
+            ResolvedInst::X(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -404,9 +410,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&PAULI_X_MAT, *qbit)
+                self.apply_mat_2(&PAULI_X_MAT, *qbit)
             }
-            ResolvedInst::Y(qbit, s) => {
+            ResolvedInst::Y(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -425,9 +431,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&PAULI_Y_MAT, *qbit)
+                self.apply_mat_2(&PAULI_Y_MAT, *qbit)
             }
-            ResolvedInst::Z(qbit, s) => {
+            ResolvedInst::Z(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -446,35 +452,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&PAULI_Z_MAT, *qbit)
+                self.apply_mat_2(&PAULI_Z_MAT, *qbit)
             }
-            ResolvedInst::Rx(qbit, rot, s) => {
-                let Some(qbit) = mapping.get(*qbit) else {
-                    return Err(Diagnostic::error()
-                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
-                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
-                        .with_notes(vec![format!(
-                            "Note: Local scope has qbits 0 to {} mapped",
-                            mapping.len()
-                        )]));
-                };
-                if qbit > &self.qbits {
-                    return Err(Diagnostic::error()
-                        .with_message("qbit index out of bounds")
-                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
-                        .with_notes(vec![format!(
-                            "Note: Number of qbits is {} as declared in headers",
-                            self.qbits
-                        )]));
-                }
-                let Some(rot) = rot.get_rot(args) else {
-                    return Err(Diagnostic::error()
-                        .with_message("Argument passed is not a rotation")
-                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
-                };
-                self.apply_mat_1(&rx(rot.get_angle()), *qbit)
-            }
-            ResolvedInst::Ry(qbit, rot, s) => {
+            ResolvedInst::Rx(qbit, rot) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -498,9 +478,9 @@ impl<'a> Emulator<'a> {
                         .with_message("Argument passed is not a rotation")
                         .with_labels(vec![Label::primary(s.file, s.span.clone())]));
                 };
-                self.apply_mat_1(&ry(rot.get_angle()), *qbit)
+                self.apply_mat_2(&rx(rot.get_angle()), *qbit)
             }
-            ResolvedInst::Rz(qbit, rot, s) => {
+            ResolvedInst::Ry(qbit, rot) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -524,9 +504,35 @@ impl<'a> Emulator<'a> {
                         .with_message("Argument passed is not a rotation")
                         .with_labels(vec![Label::primary(s.file, s.span.clone())]));
                 };
-                self.apply_mat_1(&rz(rot.get_angle()), *qbit)
+                self.apply_mat_2(&ry(rot.get_angle()), *qbit)
             }
-            ResolvedInst::U(qbit, theta, phi, lambda, s) => {
+            ResolvedInst::Rz(qbit, rot) => {
+                let Some(qbit) = mapping.get(*qbit) else {
+                    return Err(Diagnostic::error()
+                        .with_message(format!("qbit {} is not mapped in local scope", qbit))
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Local scope has qbits 0 to {} mapped",
+                            mapping.len()
+                        )]));
+                };
+                if qbit > &self.qbits {
+                    return Err(Diagnostic::error()
+                        .with_message("qbit index out of bounds")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())])
+                        .with_notes(vec![format!(
+                            "Note: Number of qbits is {} as declared in headers",
+                            self.qbits
+                        )]));
+                }
+                let Some(rot) = rot.get_rot(args) else {
+                    return Err(Diagnostic::error()
+                        .with_message("Argument passed is not a rotation")
+                        .with_labels(vec![Label::primary(s.file, s.span.clone())]));
+                };
+                self.apply_mat_2(&rz(rot.get_angle()), *qbit)
+            }
+            ResolvedInst::U(qbit, theta, phi, lambda) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -560,12 +566,12 @@ impl<'a> Emulator<'a> {
                         .with_message("Argument passed is not a rotation")
                         .with_labels(vec![Label::primary(s.file, s.span.clone())]));
                 };
-                self.apply_mat_1(
+                self.apply_mat_2(
                     &u(theta.get_angle(), phi.get_angle(), lambda.get_angle()),
                     *qbit,
                 )
             }
-            ResolvedInst::S(qbit, s) => {
+            ResolvedInst::S(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -584,9 +590,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&S_MAT, *qbit)
+                self.apply_mat_2(&S_MAT, *qbit)
             }
-            ResolvedInst::T(qbit, s) => {
+            ResolvedInst::T(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -605,9 +611,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&T_MAT, *qbit)
+                self.apply_mat_2(&T_MAT, *qbit)
             }
-            ResolvedInst::Sdg(qbit, s) => {
+            ResolvedInst::Sdg(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -626,9 +632,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&S_DG_MAT, *qbit)
+                self.apply_mat_2(&S_DG_MAT, *qbit)
             }
-            ResolvedInst::Tdg(qbit, s) => {
+            ResolvedInst::Tdg(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -647,9 +653,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&T_DG_MAT, *qbit)
+                self.apply_mat_2(&T_DG_MAT, *qbit)
             }
-            ResolvedInst::Phase(qbit, rot, s) => {
+            ResolvedInst::Phase(qbit, rot) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -673,9 +679,9 @@ impl<'a> Emulator<'a> {
                         .with_message("Argument passed is not a rotation")
                         .with_labels(vec![Label::primary(s.file, s.span.clone())]));
                 };
-                self.apply_mat_1(&r1(rot.get_angle()), *qbit)
+                self.apply_mat_2(&r1(rot.get_angle()), *qbit)
             }
-            ResolvedInst::Ch(qbit1, qbit2, s) => {
+            ResolvedInst::Ch(qbit1, qbit2) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -705,7 +711,7 @@ impl<'a> Emulator<'a> {
                 }
                 self.apply_controlled_mat(&HADAMARD_MAT, vec![*qbit1], *qbit2)
             }
-            ResolvedInst::Cy(qbit1, qbit2, s) => {
+            ResolvedInst::Cy(qbit1, qbit2) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -735,7 +741,7 @@ impl<'a> Emulator<'a> {
                 }
                 self.apply_controlled_mat(&PAULI_Y_MAT, vec![*qbit1], *qbit2)
             }
-            ResolvedInst::Cz(qbit1, qbit2, s) => {
+            ResolvedInst::Cz(qbit1, qbit2) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -765,7 +771,7 @@ impl<'a> Emulator<'a> {
                 }
                 self.apply_controlled_mat(&PAULI_Z_MAT, vec![*qbit1], *qbit2)
             }
-            ResolvedInst::CPhase(qbit1, qbit2, rot, s) => {
+            ResolvedInst::CPhase(qbit1, qbit2, rot) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -800,7 +806,7 @@ impl<'a> Emulator<'a> {
                 };
                 self.apply_controlled_mat(&r1(rot.get_angle()), vec![*qbit1], *qbit2)
             }
-            ResolvedInst::Swap(qbit1, qbit2, s) => {
+            ResolvedInst::Swap(qbit1, qbit2) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -841,7 +847,7 @@ impl<'a> Emulator<'a> {
                     qreg.swap_rows(state | qbit1_mask, state | qbit2_mask)
                 }
             }
-            ResolvedInst::SqrtX(qbit, s) => {
+            ResolvedInst::SqrtX(qbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -860,9 +866,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_1(&SQRT_X_MAT, *qbit)
+                self.apply_mat_2(&SQRT_X_MAT, *qbit)
             }
-            ResolvedInst::SqrtSwap(qbit1, qbit2, s) => {
+            ResolvedInst::SqrtSwap(qbit1, qbit2) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -890,9 +896,9 @@ impl<'a> Emulator<'a> {
                             self.qbits
                         )]));
                 }
-                self.apply_mat_2(&SQRT_SWAP_MAT, *qbit1, *qbit2)
+                self.apply_mat_4(&SQRT_SWAP_MAT, *qbit1, *qbit2)
             }
-            ResolvedInst::CSwap(qbit1, qbit2, qbit3, s) => {
+            ResolvedInst::CSwap(qbit1, qbit2, qbit3) => {
                 let Some(qbit1) = mapping.get(*qbit1) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit1))
@@ -945,7 +951,7 @@ impl<'a> Emulator<'a> {
                 }
             }
 
-            ResolvedInst::Measure(qbit, creg, cbit, s) => {
+            ResolvedInst::Measure(qbit, creg, cbit) => {
                 let Some(qbit) = mapping.get(*qbit) else {
                     return Err(Diagnostic::error()
                         .with_message(format!("qbit {} is not mapped in local scope", qbit))
@@ -986,7 +992,7 @@ impl<'a> Emulator<'a> {
                 let qreg = &mut self.qregs[self.qreg_sel];
                 let qbit_mask = 1 << qbit;
 
-                let mut prob = Complexf64::zero();
+                let mut prob = 0f64;
 
                 for state in 0..(1 << self.qbits) {
                     if state & qbit_mask != 0 {
@@ -994,17 +1000,15 @@ impl<'a> Emulator<'a> {
                     }
 
                     let amplitude = qreg[state];
-                    prob += amplitude * amplitude
+                    prob += amplitude.abs().powi(2)
                 }
 
-                if matches!(
-                    (prob.im - 0f64).abs().partial_cmp(&f64::EPSILON),
-                    None | Some(Ordering::Greater)
-                ) {
-                    println!("{}", prob);
-                    panic!("Invalid probability for qubit {}", qbit)
+                if prob > 1f64 {
+                    return Err(Diagnostic::error().with_message(format!(
+                        "Error: qubit {} has invalid probability (prob: {})",
+                        qbit, prob
+                    )));
                 }
-                let prob = prob.re;
                 if prob == 0f64 || prob == 1f64 {
                     self.cregs[*creg].set_bit(*cbit, prob == 0f64);
                     return Ok(StepResult::Continue);
@@ -1039,7 +1043,7 @@ impl<'a> Emulator<'a> {
             }
 
             // Custom gate stuff
-            ResolvedInst::Custom(name, qbits, args, s) => {
+            ResolvedInst::Custom(name, qbits, args) => {
                 let gate = &self.prog.custom_gates[name];
                 let args_ = gate
                     .1
@@ -1052,8 +1056,8 @@ impl<'a> Emulator<'a> {
                     args.insert(arg.0, arg.1.clone());
                 }
 
-                for inst in &gate.2 {
-                    let res = self.run_instr(inst, qbits, &args);
+                for (inst, s) in &gate.2 {
+                    let res = self.run_instr(inst, s, qbits, &args);
                     if let Err(diag) = res {
                         return Err(diag.with_labels(vec![Label::secondary(
                             s.file,
@@ -1065,87 +1069,87 @@ impl<'a> Emulator<'a> {
             }
 
             // Classical Instructions
-            ResolvedInst::Mov(r1, val, s) => {
+            ResolvedInst::Mov(r1, val) => {
                 let val = self.get_val(val, args, s)?;
                 self.update(r1, val, args, s)?
             }
-            ResolvedInst::Add(r1, r2, r3, s) => {
+            ResolvedInst::Add(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 + val2, args, s)?
             }
-            ResolvedInst::Sub(r1, r2, r3, s) => {
+            ResolvedInst::Sub(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 - val2, args, s)?
             }
-            ResolvedInst::Mul(r1, r2, r3, s) => {
+            ResolvedInst::Mul(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?.0 as u64;
                 let val2 = self.get_val(r3, args, s)?.0 as u64;
                 self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64), args, s)?
             }
-            ResolvedInst::UMul(r1, r2, r3, s) => {
+            ResolvedInst::UMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?.0 as u64;
                 let val2 = self.get_val(r3, args, s)?.0 as u64;
                 self.update(r1, Wrapping(val1.wrapping_mul(val2) as i64 >> 32), args, s)?
             }
-            ResolvedInst::Div(r1, r2, r3, s) => {
+            ResolvedInst::Div(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?.0 as u64;
                 let val2 = self.get_val(r3, args, s)?.0 as u64;
                 self.update(r1, Wrapping((val1 / val2) as i64), args, s)?
             }
-            ResolvedInst::SMul(r1, r2, r3, s) => {
+            ResolvedInst::SMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 * val2, args, s)?
             }
-            ResolvedInst::SUMul(r1, r2, r3, s) => {
+            ResolvedInst::SUMul(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, (val1 * val2) >> 32, args, s)?
             }
-            ResolvedInst::SDiv(r1, r2, r3, s) => {
+            ResolvedInst::SDiv(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 / val2, args, s)?
             }
-            ResolvedInst::Not(r1, r2, s) => {
+            ResolvedInst::Not(r1, r2) => {
                 let val1 = self.get_val(r2, args, s)?;
                 self.update(r1, !val1, args, s)?
             }
-            ResolvedInst::And(r1, r2, r3, s) => {
+            ResolvedInst::And(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 & val2, args, s)?
             }
-            ResolvedInst::Or(r1, r2, r3, s) => {
+            ResolvedInst::Or(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 | val2, args, s)?
             }
-            ResolvedInst::Xor(r1, r2, r3, s) => {
+            ResolvedInst::Xor(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, val1 ^ val2, args, s)?
             }
-            ResolvedInst::Nand(r1, r2, r3, s) => {
+            ResolvedInst::Nand(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, !(val1 & val2), args, s)?
             }
-            ResolvedInst::Nor(r1, r2, r3, s) => {
+            ResolvedInst::Nor(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, !(val1 | val2), args, s)?
             }
-            ResolvedInst::Xnor(r1, r2, r3, s) => {
+            ResolvedInst::Xnor(r1, r2, r3) => {
                 let val1 = self.get_val(r2, args, s)?;
                 let val2 = self.get_val(r3, args, s)?;
                 self.update(r1, !(val1 ^ val2), args, s)?
             }
 
             // Misc
-            ResolvedInst::Cmp(r1, val, s) => {
+            ResolvedInst::Cmp(r1, val) => {
                 let cmp = self.get_val(r1, args, s)?.cmp(&self.get_val(val, args, s)?);
                 match cmp {
                     Ordering::Less => {
@@ -1165,35 +1169,35 @@ impl<'a> Emulator<'a> {
                     }
                 }
             }
-            ResolvedInst::Jmp(offset, _) => {
+            ResolvedInst::Jmp(offset) => {
                 return Ok(StepResult::Branch(*offset));
             }
-            ResolvedInst::Jeq(offset, _) => {
+            ResolvedInst::Jeq(offset) => {
                 if self.flags[1] {
                     return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jne(offset, _) => {
+            ResolvedInst::Jne(offset) => {
                 if !self.flags[1] {
                     return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jg(offset, _) => {
+            ResolvedInst::Jg(offset) => {
                 if self.flags[2] {
                     return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jge(offset, _) => {
+            ResolvedInst::Jge(offset) => {
                 if self.flags[1] || self.flags[2] {
                     return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jl(offset, _) => {
+            ResolvedInst::Jl(offset) => {
                 if self.flags[0] {
                     return Ok(StepResult::Branch(*offset));
                 }
             }
-            ResolvedInst::Jle(offset, _) => {
+            ResolvedInst::Jle(offset) => {
                 if self.flags[0] || self.flags[1] {
                     return Ok(StepResult::Branch(*offset));
                 }
@@ -1337,7 +1341,7 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    fn apply_mat_1(&mut self, mat: &DCf64Mat, qbit: usize) {
+    fn apply_mat_2(&mut self, mat: &DCf64Mat2, qbit: usize) {
         let qreg = &mut self.qregs[self.qreg_sel];
 
         let mut in_gate_state = Vector2::zeros();
@@ -1360,7 +1364,7 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    fn apply_mat_2(&mut self, mat: &DCf64Mat, qbit1: usize, qbit2: usize) {
+    fn apply_mat_4(&mut self, mat: &DCf64Mat4, qbit1: usize, qbit2: usize) {
         let qreg = &mut self.qregs[self.qreg_sel];
 
         let mut in_gate_state = Vector4::zeros();
@@ -1388,7 +1392,7 @@ impl<'a> Emulator<'a> {
         }
     }
 
-    fn apply_controlled_mat(&mut self, mat: &DCf64Mat, controls: Vec<usize>, target: usize) {
+    fn apply_controlled_mat(&mut self, mat: &DCf64Mat2, controls: Vec<usize>, target: usize) {
         let qreg = &mut self.qregs[self.qreg_sel];
 
         let controls_mask = controls

@@ -116,6 +116,10 @@ fn main() {
             println!("creg {} stat:", i);
             let sum = result.iter().sum::<u64>() as f64;
             for (j, res) in result.iter().enumerate() {
+                if res == &0 {
+                    continue;
+                }
+
                 println!(
                     "[STATE {:01$b}] freq: {2};\tprob: {3:.5}",
                     j,
