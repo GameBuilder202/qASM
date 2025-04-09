@@ -132,12 +132,12 @@ General format for classical instructions are:
 ```
 op <operands>
 ```
-Where `op` is the name/opcode, operands may include `crn`, which specifies a specific classical register `n`, or an immediate literal valu, or a memory address with optional align and offset.
-These behave basically as you would expect if you have normal assembly experience. Also, all operands have the source and destination oparands separate (destination operand first).
+Where `op` is the name/opcode, operands may include `crn`, which specifies a specific classical register `n`, or an immediate literal value, or a memory address with optional align and offset.
+These behave basically as you would expect if you have normal assembly experience. Also, (almost) all operands have the source and destination oparands separate (destination operand first).
 
 List of currently implemented classical instructions:
 
-*Note: Source operand can only be a register, memory address, or an identifier, but the other arguments can be an immediate, register, memory address, or identifier.*
+*Note: Destination operand can only be a register, memory address, or an identifier, but the other arguments can be an immediate, register, memory address, or identifier.*
 
 | `op`   | Operation/value on/of destination register |
 | ------ | ----------- |
