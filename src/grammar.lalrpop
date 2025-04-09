@@ -2,7 +2,7 @@ use crate::ast::*;
 
 use lalrpop_util::ParseError;
 
-grammar<'err>(file: usize, errors: &'err mut Vec<ParseError<usize, Token<'input>, &'static str>>);
+grammar<'err>(file: usize, errors: &'err mut Vec<ParseError<usize, Token<'input>, &'static str>>, classical: bool);
 
 match {
     "qbits",
@@ -20,6 +20,8 @@ match {
     "Reg",
     "Addr",
     r"[0-9]+" => NUM,
+    r"0b|0x",
+    r#""(?:[^"\\]|\\.)*""#,
     ":",
     "pi",
     "/",
@@ -66,6 +68,7 @@ match {
     
     // Classical instructions
     "mov",
+    "movstr",
     "add",
     "sub",
     "mult",
@@ -93,13 +96,14 @@ match {
     "jge",
     "jl",
     "jle",
+    "xcall",
     "hlt",
 } else {
     r"[a-zA-Z_][a-zA-Z0-9_]*" => IDENT,
 }
 
-pub Program: Result<Program, ResolveError> = {
-    <h: Headers> <i: Instructions> => resolve_ast(h, i)
+pub Program: Result<Program, Diagnostic<usize>> = {
+    <h: Headers> <i: Instructions> => resolve_ast(h, i, classical)
 }
 
 Headers: (usize, usize, usize, usize, usize) = {
@@ -135,7 +139,7 @@ Instruction: (Inst, SourceSpan) = {
     <l: @L> "ch" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R>                            => (Inst::Ch(q0, q1), SourceSpan::new(file, l..r)),
     <l: @L> "cy" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R>                            => (Inst::Cy(q0, q1), SourceSpan::new(file, l..r)),
     <l: @L> "cz" SPACE <q0:Qbit> SPACE <q1:Qbit> <r: @R>                            => (Inst::Cz(q0, q1), SourceSpan::new(file, l..r)),
-    <l: @L> "cp" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <rot:Rot> <r:@R>             => (Inst::CPhase(q0, q1, rot), SourceSpan::new(file, l..r)),
+    <l: @L> "cp" SPACE <q0:Qbit> SPACE <q1:Qbit> SPACE <rot:Rot> <r: @R>            => (Inst::CPhase(q0, q1, rot), SourceSpan::new(file, l..r)),
     <l: @L> "swap" <q0:Qbit> SPACE <q1:Qbit> <r: @R>                                => (Inst::Swap(q0, q1), SourceSpan::new(file, l..r)),
     <l: @L> "sqrtx" <q:Qbit> <r: @R>                                                => (Inst::SqrtX(q), SourceSpan::new(file, l..r)),
     <l: @L> "sqrtswp" <q0:Qbit> SPACE <q1:Qbit> <r: @R>                             => (Inst::SqrtSwap(q0, q1), SourceSpan::new(file, l..r)),
@@ -147,7 +151,7 @@ Instruction: (Inst, SourceSpan) = {
     <args:("(" SPACE? <Ident> SPACE? ":" SPACE? <IdentType> SPACE? ")" SPACE?)*>
     "{" NEWLINE <body:Instructions> "}" <r: @R> => (Inst::CustomGateDef(name, qbits, args, body), SourceSpan::new(file, l..r)),
 
-    <l: @L> <name:Ident> SPACE <mut qbits:(<Qbit> SPACE)*> <e1:Qbit?> <args:(";" SPACE <(<CGateArg> SPACE)*> <CGateArg?>)?> <r:@R> => {
+    <l: @L> <name:Ident> SPACE <mut qbits:(<Qbit> SPACE)*> <e1:Qbit?> <args:(";" SPACE <(<CGateArg> SPACE)*> <CGateArg?>)?> <r: @R> => {
         let mut other_args;
         let e2;
         if let Some(args) = args {
@@ -181,26 +185,27 @@ Instruction: (Inst, SourceSpan) = {
     },
 
     // Classical instructions
-    <l: @L> "mov" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R>                     => (Inst::Mov(r1, r2), SourceSpan::new(file, l..r)),
-    <l: @L> "add" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Add(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "sub" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Sub(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "mult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::Mul(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "umult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>  => (Inst::UMul(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "div" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Div(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "smult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>  => (Inst::SMul(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "sumult" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => (Inst::SUMul(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "sdiv" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::SDiv(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "not" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R>                     => (Inst::Not(r1, r2), SourceSpan::new(file, l..r)),
-    <l: @L> "and" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::And(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "or" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>     => (Inst::Or(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "xor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Xor(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "nand" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::Nand(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "nor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Nor(r1, r2, r3), SourceSpan::new(file, l..r)),
-    <l: @L> "xnor" SPACE <r1:SrcOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::Xnor(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "mov" SPACE <r1:DstOp> SPACE <r2:AnyOp> <r: @R>                     => (Inst::Mov(r1, r2), SourceSpan::new(file, l..r)),
+    <l: @L> "movstr" SPACE <addr:Mem> SPACE <s:StrOp> <r: @R>                   => (Inst::MovStr(addr, s), SourceSpan::new(file, l..r)),
+    <l: @L> "add" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Add(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "sub" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Sub(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "mult" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::Mul(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "umult" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>  => (Inst::UMul(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "div" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Div(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "smult" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>  => (Inst::SMul(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "sumult" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R> => (Inst::SUMul(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "sdiv" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::SDiv(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "not" SPACE <r1:DstOp> SPACE <r2:AnyOp> <r: @R>                     => (Inst::Not(r1, r2), SourceSpan::new(file, l..r)),
+    <l: @L> "and" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::And(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "or" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>     => (Inst::Or(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "xor" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Xor(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "nand" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::Nand(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "nor" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>    => (Inst::Nor(r1, r2, r3), SourceSpan::new(file, l..r)),
+    <l: @L> "xnor" SPACE <r1:DstOp> SPACE <r2:AnyOp> SPACE <r3:AnyOp> <r: @R>   => (Inst::Xnor(r1, r2, r3), SourceSpan::new(file, l..r)),
 
     // Misc instructions
     <l: @L> "qsel" SPACE <qr:Qreg> <r: @R>                  => (Inst::Qsel(qr), SourceSpan::new(file, l..r)),
-    <l: @L> "cmp" SPACE <r1:SrcOp> SPACE <r2:AnyOp> <r: @R> => (Inst::Cmp(r1, r2), SourceSpan::new(file, l..r)),
+    <l: @L> "cmp" SPACE <r1:DstOp> SPACE <r2:AnyOp> <r: @R> => (Inst::Cmp(r1, r2), SourceSpan::new(file, l..r)),
     <l: @L> "jmp" SPACE <lbl:Label> <r: @R>                 => (Inst::Jmp(lbl), SourceSpan::new(file, l..r)),
     <l: @L> "jeq" SPACE <lbl:Label> <r: @R>                 => (Inst::Jeq(lbl), SourceSpan::new(file, l..r)),
     <l: @L> "jne" SPACE <lbl:Label> <r: @R>                 => (Inst::Jne(lbl), SourceSpan::new(file, l..r)),
@@ -208,7 +213,8 @@ Instruction: (Inst, SourceSpan) = {
     <l: @L> "jge" SPACE <lbl:Label> <r: @R>                 => (Inst::Jge(lbl), SourceSpan::new(file, l..r)),
     <l: @L> "jl" SPACE <lbl:Label> <r: @R>                  => (Inst::Jl(lbl), SourceSpan::new(file, l..r)),
     <l: @L> "jle" SPACE <lbl:Label> <r: @R>                 => (Inst::Jle(lbl), SourceSpan::new(file, l..r)),
-    <l : @L> "hlt" <r: @R>                                  => (Inst::Hlt, SourceSpan::new(file, l..r)),
+    <l: @L> "xcall" SPACE <func:Num> SPACE <dst:DstOp> <args:(SPACE <AnyOp>)*> <r: @R> => (Inst::XCall(func, dst, args), SourceSpan::new(file, l..r)),
+    <l: @L> "hlt" <r: @R>                                   => (Inst::Hlt, SourceSpan::new(file, l..r)),
 
     <Label> ":" => (Inst::Label(<>), Default::default()),
 
@@ -218,8 +224,19 @@ Instruction: (Inst, SourceSpan) = {
     }
 }
 
-Num: usize = NUM => <>.parse().unwrap();
-Imm: isize = "-"? NUM => ((<>).0.unwrap_or("").to_string() + (<>).1).parse::<isize>().unwrap();
+Num: usize = <b:r"0b|0x"?> <n:NUM> => {
+    usize::from_str_radix(
+        n,
+        if let Some(b) = b {
+            match b {
+                "0b" => 2,
+                "0x" => 16,
+                _ => unreachable!(),
+            }
+        } else { 10 }
+    ).unwrap()
+};
+Imm: isize = "-"? Num => ((<>).0.unwrap_or("").to_string() + &(<>).1.to_string()).parse::<isize>().unwrap();
 
 Label: String = IDENT => String::from(<>);
 Ident: String = IDENT => String::from(<>);
@@ -241,7 +258,7 @@ Mem: MemAddr = {
     "[" SPACE? <reg: Creg> SPACE? "+" SPACE? <offset: Num> SPACE? "]" => MemAddr::Indirect(reg, 1, offset),
     "[" SPACE? <reg: Creg> SPACE? "*" SPACE? <align: Num> SPACE? "+" SPACE? <offset: Num> SPACE? "]" => MemAddr::Indirect(reg, align, offset),
 };
-SrcOp: Operand = {
+DstOp: Operand = {
     Creg  => Operand::Reg(<>),
     Mem   => Operand::Addr(<>),
 
@@ -253,6 +270,11 @@ AnyOp: Operand = {
     Mem   => Operand::Addr(<>),
 
     Ident => Operand::Ident(<>),
+};
+StrOp: String = <s:r#""(?:[^"\\]|\\.)*""#> => {
+    let len = s.len();
+    let s = snailquote::unescape(s).unwrap();
+    String::from(s)
 };
 
 CGateArg:  IdentVal = {

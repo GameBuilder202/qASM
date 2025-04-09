@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, ops::Range};
 
-use lalrpop_util::{lalrpop_mod, ParseError};
+use lalrpop_util::{ParseError, lalrpop_mod};
 lalrpop_mod!(grammar);
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -30,11 +30,14 @@ impl SourceSpan {
     }
 }
 
-type ParseResult<'a> = Result<Program, ResolveError>;
-
-pub fn parse(code: &str, file: usize) -> (ParseResult, Vec<Diagnostic<usize>>) {
+type ParseResult = Result<Program, Diagnostic<usize>>;
+pub fn parse(
+    code: &str,
+    file: usize,
+    classical: bool,
+) -> Result<ParseResult, Vec<Diagnostic<usize>>> {
     let mut errs = Vec::new();
-    let ast = grammar::ProgramParser::new().parse(file, &mut errs, code);
+    let ast = grammar::ProgramParser::new().parse(file, &mut errs, classical, code);
     let mut diags = Vec::new();
 
     for err in errs {
@@ -42,31 +45,35 @@ pub fn parse(code: &str, file: usize) -> (ParseResult, Vec<Diagnostic<usize>>) {
         match err {
             ParseError::InvalidToken { location } => diags.push(
                 diag.with_message("Invalid token")
-                    .with_labels(vec![Label::primary(file, location..location)]),
+                    .with_label(Label::primary(file, location..location)),
             ),
 
             ParseError::UnrecognizedEof { location, .. } => diags.push(
                 diag.with_message("Unexpected EOF")
-                    .with_labels(vec![Label::primary(file, location..location)]),
+                    .with_label(Label::primary(file, location..location)),
             ),
 
-            ParseError::UnrecognizedToken { token, expected } => diags.push(
+            ParseError::UnrecognizedToken { token, expected: _ } => diags.push(
                 diag.with_message("Unrecognized token")
-                    .with_labels(vec![Label::primary(file, token.0..token.2)])
-                    .with_notes(expected),
+                    .with_label(Label::primary(file, token.0..token.2)),
+                // .with_notes(expected),
             ),
 
             ParseError::ExtraToken { token } => diags.push(
                 diag.with_message("Extra token found")
-                    .with_labels(vec![Label::primary(file, token.0..token.2)]),
+                    .with_label(Label::primary(file, token.0..token.2)),
             ),
 
             ParseError::User { .. } => {}
         }
     }
 
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+
     if let Ok(ast) = ast {
-        (ast, diags)
+        Ok(ast)
     } else {
         let mut diag = Diagnostic::error();
         let err = ast.unwrap_err();
@@ -74,42 +81,44 @@ pub fn parse(code: &str, file: usize) -> (ParseResult, Vec<Diagnostic<usize>>) {
             ParseError::InvalidToken { location } => {
                 diag = diag
                     .with_message("Invalid token")
-                    .with_labels(vec![Label::primary(file, location..location)])
+                    .with_label(Label::primary(file, location..location))
             }
 
             ParseError::UnrecognizedEof { location, .. } => {
                 diag = diag
                     .with_message("Unexpected EOF")
-                    .with_labels(vec![Label::primary(file, location..location)])
+                    .with_label(Label::primary(file, location..location))
             }
 
-            ParseError::UnrecognizedToken { token, expected } => {
+            ParseError::UnrecognizedToken { token, expected: _ } => {
                 diag = diag
                     .with_message("Unrecognized token")
-                    .with_labels(vec![Label::primary(file, token.0..token.2)])
-                    .with_notes(expected)
+                    .with_label(Label::primary(file, token.0..token.2))
+                // .with_notes(expected)
             }
 
             ParseError::ExtraToken { token } => {
                 diag = diag
                     .with_message("Extra token found")
-                    .with_labels(vec![Label::primary(file, token.0..token.2)])
+                    .with_label(Label::primary(file, token.0..token.2))
             }
 
             ParseError::User { .. } => todo!(),
         }
 
-        (Err(ResolveError::ParseError(diag)), diags)
+        Ok(Err(diag))
     }
 }
 
 pub fn resolve_ast(
     headers: (usize, usize, usize, usize, usize),
     ast: Vec<(Inst, SourceSpan)>,
-) -> Result<Program, ResolveError> {
+    classical: bool,
+) -> Result<Program, Diagnostic<usize>> {
     let mut label_map = HashMap::new();
     let mut custom_gates = HashMap::new();
     let mut resolved_insts = Vec::new();
+    let diag = Diagnostic::error();
 
     // Get all labels from the AST
     let mut i = 0usize;
@@ -121,7 +130,7 @@ pub fn resolve_ast(
         }
     }
 
-    // Update all instructions with the label map
+    // Update all instructions with the label map, and other "compile-time" stuff
     for (inst, s) in &ast {
         match inst {
             Inst::Label(_) => {}
@@ -130,7 +139,9 @@ pub fn resolve_ast(
                 if let Some(offset) = label_map.get(name) {
                     resolved_insts.push((ResolvedInst::Jmp(*offset), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedLabel(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Reference to undefined label \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
                 }
             }
 
@@ -138,7 +149,9 @@ pub fn resolve_ast(
                 if let Some(offset) = label_map.get(name) {
                     resolved_insts.push((ResolvedInst::Jeq(*offset), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedLabel(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Reference to undefined label \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
                 }
             }
 
@@ -146,7 +159,9 @@ pub fn resolve_ast(
                 if let Some(offset) = label_map.get(name) {
                     resolved_insts.push((ResolvedInst::Jne(*offset), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedLabel(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Reference to undefined label \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
                 }
             }
 
@@ -154,7 +169,9 @@ pub fn resolve_ast(
                 if let Some(offset) = label_map.get(name) {
                     resolved_insts.push((ResolvedInst::Jg(*offset), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedLabel(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Reference to undefined label \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
                 }
             }
 
@@ -162,7 +179,9 @@ pub fn resolve_ast(
                 if let Some(offset) = label_map.get(name) {
                     resolved_insts.push((ResolvedInst::Jge(*offset), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedLabel(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Reference to undefined label \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
                 }
             }
 
@@ -170,49 +189,88 @@ pub fn resolve_ast(
                 if let Some(offset) = label_map.get(name) {
                     resolved_insts.push((ResolvedInst::Jle(*offset), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedLabel(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Reference to undefined label \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
                 }
             }
 
             // Custom instruction stuff
             Inst::CustomGateDef(name, qbits, args, body) => {
-                let body = resolve_ast(headers, body.to_vec())?.instructions;
+                let body = resolve_ast(headers, body.to_vec(), classical)?.instructions;
                 custom_gates.insert(name.clone(), (*qbits, args.clone(), body));
             }
             Inst::Custom(name, qbits, args) => {
                 if let Some(gate) = custom_gates.get(name) {
                     let gate_qbits = gate.0;
                     let gate_args = &gate.1;
-                    let diag = Diagnostic::error();
 
                     if qbits.len() != gate_qbits {
-                        return Err(ResolveError::CustomGateError(
-                            diag.with_message("Given qubits to gate don't match gate definition")
-                                .with_labels(vec![Label::primary(s.file, s.span.clone())])
-                                .with_notes(vec![format!(
-                                    "Note: Gate expects {} qubits, but {} were given",
-                                    gate_qbits,
-                                    qbits.len()
-                                )]),
-                        ));
+                        return Err(diag
+                            .with_message("Given qubits to gate don't match gate definition")
+                            .with_label(Label::primary(s.file, s.span.clone()))
+                            .with_note(format!(
+                                "Note: Gate expects {} qubits, but {} were given",
+                                gate_qbits,
+                                qbits.len()
+                            )));
                     }
                     if args.iter().map(|x| x.get_type()).collect::<Vec<_>>()
                         != gate_args.iter().map(|x| x.1).collect::<Vec<_>>()
                     {
-                        return Err(ResolveError::CustomGateError(
-                            diag.with_message("Given args to gate don't match gate definition")
-                                .with_labels(vec![Label::primary(s.file, s.span.clone())])
-                                .with_notes(vec![format!(
-                                    "Note: Gate expects arg types {}, but given arg types were {}",
-                                    format_vec(gate_args.iter().map(|x| x.1).collect()),
-                                    format_vec(args.iter().map(|x| x.get_type()).collect()),
-                                )]),
-                        ));
+                        return Err(diag
+                            .with_message("Given args to gate don't match gate definition")
+                            .with_label(Label::primary(s.file, s.span.clone()))
+                            .with_note(format!(
+                                "Note: Gate expects arg types {}, but given arg types were {}",
+                                format_vec(gate_args.iter().map(|x| x.1).collect()),
+                                format_vec(args.iter().map(|x| x.get_type()).collect()),
+                            )));
                     }
 
                     resolved_insts.push((inst.into(), s.clone()))
                 } else {
-                    return Err(ResolveError::UndefinedGate(name.clone(), s.clone()));
+                    return Err(diag
+                        .with_message(format!("Usage of undefined gate \"{}\"", name))
+                        .with_label(Label::primary(s.file, s.span.clone())));
+                }
+            }
+
+            Inst::XCall(func, _, args) => {
+                if !classical {
+                    return Err(diag
+                        .with_message("Xcall not allowed without --classical flag")
+                        .with_label(Label::primary(s.file, s.span.clone())));
+                }
+
+                let args_len_expected = match func {
+                    0x00 => Some(2usize),
+                    0x01 => Some(2),
+
+                    _ => None,
+                };
+
+                if let Some(len) = args_len_expected {
+                    if args.len() == len {
+                        resolved_insts.push((inst.into(), s.clone()))
+                    } else {
+                        return Err(diag
+                            .with_message(format!(
+                                "Number of arguments to xcall {} are incorrect",
+                                func
+                            ))
+                            .with_label(Label::primary(s.file, s.span.clone()))
+                            .with_note(format!(
+                                "Note: Expected {} args, but {} were given",
+                                len,
+                                args.len()
+                            )));
+                    }
+                } else {
+                    return Err(diag
+                        .with_message("Invalid xcall")
+                        .with_label(Label::primary(s.file, s.span.clone()))
+                        .with_note(format!("Xcall {} does not exist", func)));
                 }
             }
 
@@ -271,8 +329,8 @@ pub enum Inst {
     CSwap(usize, usize, usize),
     Measure(usize, usize, usize),
 
-    // Custom gate stuff
-    //            (name,  qbits, args,                     body)
+    // Custom gate definition
+    // (name, qbits, args, body)
     CustomGateDef(
         String,
         usize,
@@ -283,6 +341,7 @@ pub enum Inst {
 
     // Classical Instructions
     Mov(Operand, Operand),
+    MovStr(MemAddr, String),
     Add(Operand, Operand, Operand),
     Sub(Operand, Operand, Operand),
     Mul(Operand, Operand, Operand),
@@ -308,6 +367,7 @@ pub enum Inst {
     Jge(String),
     Jl(String),
     Jle(String),
+    XCall(usize, Operand, Vec<Operand>),
     Hlt,
 
     Label(String),
@@ -350,6 +410,7 @@ pub enum ResolvedInst {
 
     // Classical Instructions
     Mov(Operand, Operand),
+    MovStr(MemAddr, String),
     Add(Operand, Operand, Operand),
     Sub(Operand, Operand, Operand),
     Mul(Operand, Operand, Operand),
@@ -375,6 +436,7 @@ pub enum ResolvedInst {
     Jge(usize),
     Jl(usize),
     Jle(usize),
+    XCall(usize, Operand, Vec<Operand>),
 
     Hlt,
 }
@@ -418,6 +480,7 @@ impl From<&Inst> for ResolvedInst {
 
             // Classical Instructions
             Inst::Mov(cr1, val) => Self::Mov(cr1.clone(), val.clone()),
+            Inst::MovStr(addr, str) => Self::MovStr(*addr, str.clone()),
             Inst::Add(cr1, cr2, cr3) => Self::Add(cr1.clone(), cr2.clone(), cr3.clone()),
             Inst::Sub(cr1, cr2, cr3) => Self::Sub(cr1.clone(), cr2.clone(), cr3.clone()),
             Inst::Mul(cr1, cr2, cr3) => Self::Mul(cr1.clone(), cr2.clone(), cr3.clone()),
@@ -436,6 +499,7 @@ impl From<&Inst> for ResolvedInst {
 
             // Misc
             Inst::Cmp(cr1, val) => Self::Cmp(cr1.clone(), val.clone()),
+            Inst::XCall(func, dst, args) => Self::XCall(*func, dst.clone(), args.clone()),
             Inst::Hlt => Self::Hlt,
 
             _ => unreachable!(), /* Atleast hopefully unreachable if I didn't mess up stuff */
