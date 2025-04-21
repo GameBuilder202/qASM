@@ -254,7 +254,6 @@ namespace test
 
 import "foo.qASM"
 import "bar.qASM"
-pub import "baz.qASM"
 
 gate super_secret_private_gate (qubits = 1) {
     h q0
@@ -265,11 +264,15 @@ pub gate public_gate (qubits = 2) (r : Rot) {
     rx q0 r
 }
 ```
-As hinted by the first line, each imported file declares a namespace/scope (idk which[^2]) under which all public exported items reside.
+As hinted by the first line, each imported file declares a namespace under which items are accessed under.
+Technically, the file declares the absolute namesapce under which it resides, so if this namespace `test` is supposed to be under namespace `foo`, the start of the file would be
+```
+namespace foo::test
+```
 
-Public items under a namespace/scope are accessed using `::` as in `the::scope::item`, so in the above example, if `foo.qASM` exported a custom gate `qft` under namespace/scope `foo`, it would be accessed via `foo::qft`.
-Namespaces/Scopes can be nested, so an item under namespace/scope `baz` in `baz.qASM` can be accessed from a file importing the above code with `test::baz::item`.
-Items within the file don't have to be accessed via any namespace/scope, they can be treated as residing in the global namespace, and ofcourse private items can *only* be accessed here.
+Public items under a namespace are accessed also using `::` as in `the::namespace::item`, so in the above example, if `foo.qASM` exported a custom gate `qft` under namespace `foo`, it would be accessed via `foo::qft`.
+The namespaces under which imported files reside in (such as for `foo.qASM` and `bar.qASM` in the above examples) are *not* exposed to the file importing it. It has to manually import those files to access their namespaces and its items.
+This is because since imports are file-based, as opposed to some module-based system, privateness can only be guaranteed within a file and not within a multi-file structure.
 
 
 [^1]: Kind of, its more like there *will* be 2 major divisions of qASM code,
